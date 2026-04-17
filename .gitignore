@@ -1,0 +1,37 @@
+# Maven/Java build output
+/target/
+/out/
+
+# Compiled class files
+*.class
+
+# Packaged artifacts
+*.jar
+*.war
+*.ear
+
+# Logs
+*.log
+/logs/
+
+# Temporary files
+*.tmp
+*.swp
+*.swo
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# IDEs and editors
+.idea/
+*.iml
+.vscode/
+
+# Optional local environment overrides
+.env
+.env.*
+
+# Spring Boot local config overrides (if used)
+application-local.yml
+application-local.properties
