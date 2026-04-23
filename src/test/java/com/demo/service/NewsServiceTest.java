@@ -3,7 +3,6 @@ package com.demo.service;
 import com.demo.dao.NewsDao;
 import com.demo.entity.News;
 import com.demo.service.impl.NewsServiceImpl;
-import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
@@ -15,10 +14,9 @@ import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 
 import java.time.LocalDateTime;
-import java.util.Arrays;
+import java.util.Collections;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -32,47 +30,42 @@ class NewsServiceTest {
     private NewsServiceImpl newsService;
 
     @Test
-    @Tag("P1")
     void utNs01_findAll_shouldReturnPage() {
-        Pageable pageable = PageRequest.of(0, 10);
-        Page<News> page = new PageImpl<>(Arrays.asList(
-                new News(1, "t1", "c1", LocalDateTime.now()),
-                new News(2, "t2", "c2", LocalDateTime.now())
-        ));
+        Pageable pageable = PageRequest.of(0, 5);
+        Page<News> page = new PageImpl<>(Collections.singletonList(buildNews(1, "title")));
         when(newsDao.findAll(pageable)).thenReturn(page);
 
         Page<News> result = newsService.findAll(pageable);
 
-        assertEquals(2, result.getContent().size());
+        assertEquals(1, result.getTotalElements());
+        verify(newsDao).findAll(pageable);
     }
 
     @Test
-    @Tag("P0")
     void utNs02_findById_shouldReturnNews() {
-        News news = new News(12, "title", "content", LocalDateTime.now());
-        when(newsDao.getOne(12)).thenReturn(news);
+        News news = buildNews(2, "news2");
+        when(newsDao.getOne(2)).thenReturn(news);
 
-        News result = newsService.findById(12);
+        News result = newsService.findById(2);
 
-        assertSame(news, result);
+        assertEquals("news2", result.getTitle());
+        verify(newsDao).getOne(2);
     }
 
     @Test
-    @Tag("P0")
     void utNs03_create_shouldReturnNewsID() {
-        News news = new News(0, "new", "content", LocalDateTime.now());
-        News saved = new News(55, "new", "content", LocalDateTime.now());
-        when(newsDao.save(news)).thenReturn(saved);
+        News news = buildNews(3, "new");
+        when(newsDao.save(news)).thenReturn(news);
 
-        int result = newsService.create(news);
+        int id = newsService.create(news);
 
-        assertEquals(55, result);
+        assertEquals(3, id);
+        verify(newsDao).save(news);
     }
 
     @Test
-    @Tag("P0")
     void utNs04_update_shouldSaveNews() {
-        News news = new News(12, "new title", "new content", LocalDateTime.now());
+        News news = buildNews(4, "update");
 
         newsService.update(news);
 
@@ -80,10 +73,18 @@ class NewsServiceTest {
     }
 
     @Test
-    @Tag("P0")
     void utNs05_delById_shouldDeleteNews() {
-        newsService.delById(12);
+        newsService.delById(5);
 
-        verify(newsDao).deleteById(12);
+        verify(newsDao).deleteById(5);
+    }
+
+    private News buildNews(int newsID, String title) {
+        News news = new News();
+        news.setNewsID(newsID);
+        news.setTitle(title);
+        news.setContent("content");
+        news.setTime(LocalDateTime.of(2026, 4, 23, 10, 0, 0));
+        return news;
     }
 }

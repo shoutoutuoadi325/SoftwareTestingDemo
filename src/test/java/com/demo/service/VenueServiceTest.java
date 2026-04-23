@@ -3,7 +3,6 @@ package com.demo.service;
 import com.demo.dao.VenueDao;
 import com.demo.entity.Venue;
 import com.demo.service.impl.VenueServiceImpl;
-import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
@@ -15,10 +14,10 @@ import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 
 import java.util.Arrays;
+import java.util.Collections;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -32,72 +31,64 @@ class VenueServiceTest {
     private VenueServiceImpl venueService;
 
     @Test
-    @Tag("P0")
     void utVs01_findByVenueID_shouldReturnVenue() {
-        Venue venue = new Venue(16, "场馆2", "desc", 500, "", "上海", "09:00", "18:00");
-        when(venueDao.getOne(16)).thenReturn(venue);
+        Venue venue = buildVenue(1, "羽毛球馆", 80);
+        when(venueDao.getOne(1)).thenReturn(venue);
 
-        Venue result = venueService.findByVenueID(16);
+        Venue result = venueService.findByVenueID(1);
 
-        assertSame(venue, result);
+        assertEquals("羽毛球馆", result.getVenueName());
+        verify(venueDao).getOne(1);
     }
 
     @Test
-    @Tag("P0")
     void utVs02_findByVenueName_shouldReturnVenue() {
-        Venue venue = new Venue(16, "场馆2", "desc", 500, "", "上海", "09:00", "18:00");
-        when(venueDao.findByVenueName("场馆2")).thenReturn(venue);
+        Venue venue = buildVenue(2, "游泳馆", 120);
+        when(venueDao.findByVenueName("游泳馆")).thenReturn(venue);
 
-        Venue result = venueService.findByVenueName("场馆2");
+        Venue result = venueService.findByVenueName("游泳馆");
 
-        assertSame(venue, result);
+        assertEquals(2, result.getVenueID());
+        verify(venueDao).findByVenueName("游泳馆");
     }
 
     @Test
-    @Tag("P1")
     void utVs03_findAllPageable_shouldReturnPage() {
         Pageable pageable = PageRequest.of(0, 5);
-        Page<Venue> page = new PageImpl<>(Arrays.asList(
-                new Venue(1, "v1", "d1", 100, "", "a", "09:00", "20:00"),
-                new Venue(2, "v2", "d2", 200, "", "b", "09:00", "20:00")
-        ));
+        Page<Venue> page = new PageImpl<>(Collections.singletonList(buildVenue(1, "羽毛球馆", 80)));
         when(venueDao.findAll(pageable)).thenReturn(page);
 
         Page<Venue> result = venueService.findAll(pageable);
 
-        assertEquals(2, result.getContent().size());
+        assertEquals(1, result.getTotalElements());
+        verify(venueDao).findAll(pageable);
     }
 
     @Test
-    @Tag("P1")
     void utVs04_findAll_shouldReturnList() {
-        List<Venue> venues = Arrays.asList(
-                new Venue(1, "v1", "d1", 100, "", "a", "09:00", "20:00"),
-                new Venue(2, "v2", "d2", 200, "", "b", "09:00", "20:00")
-        );
+        List<Venue> venues = Arrays.asList(buildVenue(1, "羽毛球馆", 80), buildVenue(2, "网球馆", 90));
         when(venueDao.findAll()).thenReturn(venues);
 
         List<Venue> result = venueService.findAll();
 
         assertEquals(2, result.size());
+        verify(venueDao).findAll();
     }
 
     @Test
-    @Tag("P0")
     void utVs05_create_shouldReturnVenueID() {
-        Venue venue = new Venue(0, "new", "d", 123, "", "a", "09:00", "20:00");
-        Venue saved = new Venue(99, "new", "d", 123, "", "a", "09:00", "20:00");
-        when(venueDao.save(venue)).thenReturn(saved);
+        Venue venue = buildVenue(10, "新馆", 100);
+        when(venueDao.save(venue)).thenReturn(venue);
 
-        int result = venueService.create(venue);
+        int venueID = venueService.create(venue);
 
-        assertEquals(99, result);
+        assertEquals(10, venueID);
+        verify(venueDao).save(venue);
     }
 
     @Test
-    @Tag("P0")
     void utVs06_update_shouldSaveVenue() {
-        Venue venue = new Venue(16, "场馆2", "new", 600, "", "上海", "09:00", "18:00");
+        Venue venue = buildVenue(1, "羽毛球馆2", 100);
 
         venueService.update(venue);
 
@@ -105,23 +96,32 @@ class VenueServiceTest {
     }
 
     @Test
-    @Tag("P0")
     void utVs07_delById_shouldDeleteVenue() {
-        venueService.delById(16);
+        venueService.delById(5);
 
-        verify(venueDao).deleteById(16);
+        verify(venueDao).deleteById(5);
     }
 
     @Test
-    @Tag("P1")
     void utVs08_countVenueName_shouldReturnCount() {
-        when(venueDao.countByVenueName("场馆2")).thenReturn(1);
-        when(venueDao.countByVenueName("ut_venue_x")).thenReturn(0);
+        when(venueDao.countByVenueName("羽毛球馆")).thenReturn(1);
 
-        int existing = venueService.countVenueName("场馆2");
-        int notExisting = venueService.countVenueName("ut_venue_x");
+        int count = venueService.countVenueName("羽毛球馆");
 
-        assertEquals(1, existing);
-        assertEquals(0, notExisting);
+        assertEquals(1, count);
+        verify(venueDao).countByVenueName("羽毛球馆");
+    }
+
+    private Venue buildVenue(int venueID, String venueName, int price) {
+        Venue venue = new Venue();
+        venue.setVenueID(venueID);
+        venue.setVenueName(venueName);
+        venue.setDescription("desc");
+        venue.setAddress("addr");
+        venue.setPrice(price);
+        venue.setPicture("");
+        venue.setOpen_time("08:00");
+        venue.setClose_time("22:00");
+        return venue;
     }
 }

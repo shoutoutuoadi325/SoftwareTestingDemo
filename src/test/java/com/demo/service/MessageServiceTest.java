@@ -3,7 +3,6 @@ package com.demo.service;
 import com.demo.dao.MessageDao;
 import com.demo.entity.Message;
 import com.demo.service.impl.MessageServiceImpl;
-import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
@@ -15,11 +14,9 @@ import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 
 import java.time.LocalDateTime;
-import java.util.Arrays;
+import java.util.Collections;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertNotNull;
-import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -34,48 +31,42 @@ class MessageServiceTest {
     private MessageServiceImpl messageService;
 
     @Test
-    @Tag("P0")
     void utMs01_findById_shouldReturnMessage() {
-        Message message = new Message(2, "test", "hello", LocalDateTime.now(), 2);
-        when(messageDao.getOne(2)).thenReturn(message);
+        Message message = buildMessage(1, "u1001", MessageService.STATE_NO_AUDIT);
+        when(messageDao.getOne(1)).thenReturn(message);
 
-        Message result = messageService.findById(2);
+        Message result = messageService.findById(1);
 
-        assertSame(message, result);
+        assertEquals(1, result.getMessageID());
+        verify(messageDao).getOne(1);
     }
 
     @Test
-    @Tag("P0")
     void utMs02_findByUser_shouldReturnUserMessages() {
         Pageable pageable = PageRequest.of(0, 5);
-        Page<Message> page = new PageImpl<>(Arrays.asList(
-                new Message(1, "test", "c1", LocalDateTime.now(), 1),
-                new Message(2, "test", "c2", LocalDateTime.now(), 2)
-        ));
-        when(messageDao.findAllByUserID("test", pageable)).thenReturn(page);
+        Page<Message> page = new PageImpl<>(Collections.singletonList(buildMessage(1, "u1001", MessageService.STATE_PASS)));
+        when(messageDao.findAllByUserID("u1001", pageable)).thenReturn(page);
 
-        Page<Message> result = messageService.findByUser("test", pageable);
+        Page<Message> result = messageService.findByUser("u1001", pageable);
 
-        assertEquals(2, result.getContent().size());
-        result.getContent().forEach(msg -> assertEquals("test", msg.getUserID()));
+        assertEquals(1, result.getTotalElements());
+        verify(messageDao).findAllByUserID("u1001", pageable);
     }
 
     @Test
-    @Tag("P0")
     void utMs03_create_shouldReturnMessageID() {
-        Message message = new Message(0, "test", "new", LocalDateTime.now(), 1);
-        Message saved = new Message(101, "test", "new", LocalDateTime.now(), 1);
-        when(messageDao.save(message)).thenReturn(saved);
+        Message message = buildMessage(8, "u1001", MessageService.STATE_NO_AUDIT);
+        when(messageDao.save(message)).thenReturn(message);
 
-        int result = messageService.create(message);
+        int messageID = messageService.create(message);
 
-        assertEquals(101, result);
+        assertEquals(8, messageID);
+        verify(messageDao).save(message);
     }
 
     @Test
-    @Tag("P0")
     void utMs04_update_shouldSaveMessage() {
-        Message message = new Message(2, "test", "updated", LocalDateTime.now(), 1);
+        Message message = buildMessage(2, "u1001", MessageService.STATE_NO_AUDIT);
 
         messageService.update(message);
 
@@ -83,65 +74,83 @@ class MessageServiceTest {
     }
 
     @Test
-    @Tag("P0")
     void utMs05_delById_shouldDeleteMessage() {
-        messageService.delById(2);
+        messageService.delById(4);
 
-        verify(messageDao).deleteById(2);
+        verify(messageDao).deleteById(4);
     }
 
     @Test
-    @Tag("P0")
     void utMs06_confirmMessage_shouldUpdateStateToPass() {
-        Message message = new Message(2, "test", "c", LocalDateTime.now(), 1);
-        when(messageDao.findByMessageID(2)).thenReturn(message);
+        Message message = buildMessage(10, "u1001", MessageService.STATE_NO_AUDIT);
+        when(messageDao.findByMessageID(10)).thenReturn(message);
 
-        messageService.confirmMessage(2);
+        messageService.confirmMessage(10);
 
-        verify(messageDao).updateState(MessageService.STATE_PASS, 2);
+        verify(messageDao).updateState(MessageService.STATE_PASS, 10);
     }
 
     @Test
-    @Tag("P0")
-    void utMs07_rejectMessage_shouldUpdateStateToReject() {
-        Message message = new Message(2, "test", "c", LocalDateTime.now(), 1);
-        when(messageDao.findByMessageID(2)).thenReturn(message);
+    void utMs07_confirmMessage_notFound_shouldThrowRuntimeException() {
+        when(messageDao.findByMessageID(999)).thenReturn(null);
 
-        messageService.rejectMessage(2);
+        RuntimeException ex = assertThrows(RuntimeException.class, () -> messageService.confirmMessage(999));
 
-        verify(messageDao).updateState(MessageService.STATE_REJECT, 2);
-    }
-
-    @Test
-    @Tag("P0")
-    void utMs08_confirmMessage_notFound_shouldThrowRuntimeException() {
-        when(messageDao.findByMessageID(-1)).thenReturn(null);
-
-        RuntimeException ex = assertThrows(RuntimeException.class, () -> messageService.confirmMessage(-1));
-
-        assertNotNull(ex.getMessage());
         assertEquals("留言不存在", ex.getMessage());
     }
 
     @Test
-    @Tag("P1")
-    void utMs09_findWaitStateAndFindPassState_shouldReturnPagesByState() {
+    void utMs08_rejectMessage_shouldUpdateStateToReject() {
+        Message message = buildMessage(11, "u1001", MessageService.STATE_NO_AUDIT);
+        when(messageDao.findByMessageID(11)).thenReturn(message);
+
+        messageService.rejectMessage(11);
+
+        verify(messageDao).updateState(MessageService.STATE_REJECT, 11);
+    }
+
+    @Test
+    void utMs09_rejectMessage_notFound_shouldThrowRuntimeException() {
+        when(messageDao.findByMessageID(998)).thenReturn(null);
+
+        RuntimeException ex = assertThrows(RuntimeException.class, () -> messageService.rejectMessage(998));
+
+        assertEquals("留言不存在", ex.getMessage());
+    }
+
+    @Test
+    void utMs10_findWaitState_shouldReturnNoAuditPage() {
         Pageable pageable = PageRequest.of(0, 10);
-        Page<Message> waitPage = new PageImpl<>(Arrays.asList(
-                new Message(1, "u", "c", LocalDateTime.now(), MessageService.STATE_NO_AUDIT)
-        ));
-        Page<Message> passPage = new PageImpl<>(Arrays.asList(
-                new Message(2, "u", "c", LocalDateTime.now(), MessageService.STATE_PASS)
-        ));
-        when(messageDao.findAllByState(MessageService.STATE_NO_AUDIT, pageable)).thenReturn(waitPage);
-        when(messageDao.findAllByState(MessageService.STATE_PASS, pageable)).thenReturn(passPage);
+        Page<Message> page = new PageImpl<>(Collections.singletonList(buildMessage(3, "u1001", MessageService.STATE_NO_AUDIT)));
+        when(messageDao.findAllByState(MessageService.STATE_NO_AUDIT, pageable)).thenReturn(page);
 
-        Page<Message> waitResult = messageService.findWaitState(pageable);
-        Page<Message> passResult = messageService.findPassState(pageable);
+        Page<Message> result = messageService.findWaitState(pageable);
 
-        assertEquals(1, waitResult.getContent().size());
-        assertEquals(MessageService.STATE_NO_AUDIT, waitResult.getContent().get(0).getState());
-        assertEquals(1, passResult.getContent().size());
-        assertEquals(MessageService.STATE_PASS, passResult.getContent().get(0).getState());
+        assertEquals(1, result.getTotalElements());
+        assertEquals(MessageService.STATE_NO_AUDIT, result.getContent().get(0).getState());
+        verify(messageDao).findAllByState(MessageService.STATE_NO_AUDIT, pageable);
+    }
+
+    @Test
+    void utMs11_findPassState_shouldReturnPassPage() {
+        Pageable pageable = PageRequest.of(0, 10);
+        Page<Message> page = new PageImpl<>(Collections.singletonList(buildMessage(5, "u1001", MessageService.STATE_PASS)));
+        when(messageDao.findAllByState(MessageService.STATE_PASS, pageable)).thenReturn(page);
+
+        Page<Message> result = messageService.findPassState(pageable);
+
+        assertEquals(1, result.getTotalElements());
+        assertEquals(MessageService.STATE_PASS, result.getContent().get(0).getState());
+        verify(messageDao).findAllByState(MessageService.STATE_PASS, pageable);
+    }
+
+    private Message buildMessage(int id, String userID, int state) {
+        Message message = new Message();
+        message.setMessageID(id);
+        message.setUserID(userID);
+        message.setContent("msg-" + id);
+        message.setTime(LocalDateTime.of(2026, 4, 23, 12, 0, 0));
+        message.setState(state);
+        return message;
     }
 }

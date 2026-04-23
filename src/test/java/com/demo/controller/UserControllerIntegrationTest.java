@@ -1,25 +1,23 @@
 package com.demo.controller;
 
-import com.demo.dao.UserDao;
+import com.demo.controller.user.UserController;
 import com.demo.entity.User;
-import org.junit.jupiter.api.Tag;
+import com.demo.service.UserService;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
-import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
-import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.mock.web.MockHttpSession;
-import org.springframework.test.web.servlet.MockMvc;
-import org.springframework.test.web.servlet.MvcResult;
-import org.springframework.transaction.annotation.Transactional;
-import org.springframework.web.multipart.MultipartFile;
+import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
+import org.mockito.InjectMocks;
+import org.mockito.Mock;
+import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.mock.web.MockMultipartFile;
-
-import java.util.UUID;
+import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.test.web.servlet.setup.MockMvcBuilders;
+import org.springframework.web.servlet.view.InternalResourceViewResolver;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertNotNull;
-import static org.junit.jupiter.api.Assertions.assertNull;
-import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.multipart;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
@@ -28,25 +26,32 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.view;
 
-@SpringBootTest
-@AutoConfigureMockMvc
-@Transactional
+@ExtendWith(MockitoExtension.class)
 class UserControllerIntegrationTest {
 
-    @Autowired
+    @Mock
+    private UserService userService;
+
+    @InjectMocks
+    private UserController userController;
+
     private MockMvc mockMvc;
 
-    @Autowired
-    private UserDao userDao;
+    @BeforeEach
+    void setUp() {
+        mockMvc = MockMvcBuilders.standaloneSetup(userController)
+                .setViewResolvers(viewResolver())
+                .build();
+    }
 
-    private MockHttpSession userSession(String userId) {
-        MockHttpSession session = new MockHttpSession();
-        session.setAttribute("user", userDao.findByUserID(userId));
-        return session;
+    private InternalResourceViewResolver viewResolver() {
+        InternalResourceViewResolver resolver = new InternalResourceViewResolver();
+        resolver.setPrefix("/templates/");
+        resolver.setSuffix(".html");
+        return resolver;
     }
 
     @Test
-    @Tag("P1")
     void itAuth01_getSignup_shouldReturnSignupView() throws Exception {
         mockMvc.perform(get("/signup"))
                 .andExpect(status().isOk())
@@ -54,7 +59,6 @@ class UserControllerIntegrationTest {
     }
 
     @Test
-    @Tag("P1")
     void itAuth02_getLogin_shouldReturnLoginView() throws Exception {
         mockMvc.perform(get("/login"))
                 .andExpect(status().isOk())
@@ -62,147 +66,190 @@ class UserControllerIntegrationTest {
     }
 
     @Test
-    @Tag("P0")
     void itAuth03_loginUser_shouldSetUserSessionAndReturnIndexPath() throws Exception {
-        MvcResult result = mockMvc.perform(post("/loginCheck.do")
-                        .param("userID", "test")
-                        .param("password", "test"))
-                .andExpect(status().isOk())
-                .andExpect(content().string("/index"))
-                .andReturn();
+        User user = buildUser("u1001", "alice", 0, "123456");
+        when(userService.checkLogin("u1001", "123456")).thenReturn(user);
 
-        assertNotNull(result.getRequest().getSession(false));
-        assertNotNull(result.getRequest().getSession(false).getAttribute("user"));
-        assertNull(result.getRequest().getSession(false).getAttribute("admin"));
-    }
-
-    @Test
-    @Tag("P0")
-    void itAuth04_loginAdmin_shouldSetAdminSessionAndReturnAdminIndexPath() throws Exception {
-        MvcResult result = mockMvc.perform(post("/loginCheck.do")
-                        .param("userID", "admin")
-                        .param("password", "admin"))
-                .andExpect(status().isOk())
-                .andExpect(content().string("/admin_index"))
-                .andReturn();
-
-        assertNotNull(result.getRequest().getSession(false));
-        assertNotNull(result.getRequest().getSession(false).getAttribute("admin"));
-        assertNull(result.getRequest().getSession(false).getAttribute("user"));
-    }
-
-    @Test
-    @Tag("P0")
-    void itAuth05_loginWithWrongPassword_shouldReturnFalse() throws Exception {
         mockMvc.perform(post("/loginCheck.do")
-                        .param("userID", "test")
-                        .param("password", "wrong"))
+                        .param("userID", "u1001")
+                        .param("password", "123456"))
+                .andExpect(status().isOk())
+                .andExpect(content().string("/index"));
+    }
+
+    @Test
+    void itAuth04_loginAdmin_shouldSetAdminSessionAndReturnAdminIndexPath() throws Exception {
+        User admin = buildUser("admin", "root", 1, "admin123");
+        when(userService.checkLogin("admin", "admin123")).thenReturn(admin);
+
+        mockMvc.perform(post("/loginCheck.do")
+                        .param("userID", "admin")
+                        .param("password", "admin123"))
+                .andExpect(status().isOk())
+                .andExpect(content().string("/admin_index"));
+    }
+
+    @Test
+    void itAuth05_loginWithWrongPassword_shouldReturnFalse() throws Exception {
+        when(userService.checkLogin("u1001", "bad")).thenReturn(null);
+
+        mockMvc.perform(post("/loginCheck.do")
+                        .param("userID", "u1001")
+                        .param("password", "bad"))
                 .andExpect(status().isOk())
                 .andExpect(content().string("false"));
     }
 
     @Test
-    @Tag("P0")
     void itAuth06_register_shouldRedirectToLoginAndInsertUser() throws Exception {
-        String userId = "it_reg_" + UUID.randomUUID().toString().replace("-", "").substring(0, 8);
-
         mockMvc.perform(post("/register.do")
-                        .param("userID", userId)
-                        .param("userName", "注册用户")
-                        .param("password", "pass123")
-                        .param("email", "reg@test.com")
-                        .param("phone", "13800000000"))
+                        .param("userID", "u2001")
+                        .param("userName", "newUser")
+                        .param("password", "pass")
+                        .param("email", "u2001@mail.com")
+                        .param("phone", "13900000000"))
                 .andExpect(status().is3xxRedirection())
                 .andExpect(redirectedUrl("login"));
 
-        User inserted = userDao.findByUserID(userId);
-        assertNotNull(inserted);
-        assertEquals("注册用户", inserted.getUserName());
+        ArgumentCaptor<User> captor = ArgumentCaptor.forClass(User.class);
+        verify(userService).create(captor.capture());
+        User created = captor.getValue();
+        assertEquals("u2001", created.getUserID());
+        assertEquals("newUser", created.getUserName());
+        assertEquals("pass", created.getPassword());
+        assertEquals("u2001@mail.com", created.getEmail());
+        assertEquals("13900000000", created.getPhone());
+        assertEquals("", created.getPicture());
     }
 
     @Test
-    @Tag("P0")
     void itAuth07_logout_shouldClearUserSessionAndRedirectIndex() throws Exception {
-        MockHttpSession session = userSession("test");
-
-        MvcResult result = mockMvc.perform(get("/logout.do").session(session))
+        mockMvc.perform(get("/logout.do").sessionAttr("user", buildUser("u1001", "alice", 0, "123456")))
                 .andExpect(status().is3xxRedirection())
-                .andExpect(redirectedUrl("/index"))
-                .andReturn();
-
-        assertNull(result.getRequest().getSession(false).getAttribute("user"));
+                .andExpect(redirectedUrl("/index"));
     }
 
     @Test
-    @Tag("P0")
     void itAuth08_quit_shouldClearAdminSessionAndRedirectIndex() throws Exception {
-        MockHttpSession session = new MockHttpSession();
-        session.setAttribute("admin", userDao.findByUserID("admin"));
-
-        MvcResult result = mockMvc.perform(get("/quit.do").session(session))
+        mockMvc.perform(get("/quit.do").sessionAttr("admin", buildUser("admin", "root", 1, "admin123")))
                 .andExpect(status().is3xxRedirection())
-                .andExpect(redirectedUrl("/index"))
-                .andReturn();
-
-        assertNull(result.getRequest().getSession(false).getAttribute("admin"));
+                .andExpect(redirectedUrl("/index"));
     }
 
     @Test
-    @Tag("P1")
     void itAuth09_checkPasswordCorrect_shouldReturnTrue() throws Exception {
+        when(userService.findByUserID("u1001")).thenReturn(buildUser("u1001", "alice", 0, "123456"));
+
         mockMvc.perform(get("/checkPassword.do")
-                        .param("userID", "test")
-                        .param("password", "test"))
+                        .param("userID", "u1001")
+                        .param("password", "123456"))
                 .andExpect(status().isOk())
                 .andExpect(content().string("true"));
     }
 
     @Test
-    @Tag("P1")
     void itAuth10_checkPasswordWrong_shouldReturnFalse() throws Exception {
+        when(userService.findByUserID("u1001")).thenReturn(buildUser("u1001", "alice", 0, "123456"));
+
         mockMvc.perform(get("/checkPassword.do")
-                        .param("userID", "test")
-                        .param("password", "wrong"))
+                        .param("userID", "u1001")
+                        .param("password", "bad"))
                 .andExpect(status().isOk())
                 .andExpect(content().string("false"));
     }
 
     @Test
-    @Tag("P0")
-    void itAuth11_updateUser_shouldRedirectAndUpdateDatabaseAndSession() throws Exception {
-        MockHttpSession session = userSession("test");
-        MultipartFile emptyPicture = new MockMultipartFile("picture", "", "application/octet-stream", new byte[0]);
+    void itAuth11_checkPasswordWhenUserMissing_shouldReturnFalse() throws Exception {
+        when(userService.findByUserID("missing")).thenReturn(null);
 
-        MvcResult result = mockMvc.perform(multipart("/updateUser.do")
-                        .file((MockMultipartFile) emptyPicture)
-                        .param("userName", "test_updated")
-                        .param("userID", "test")
-                        .param("passwordNew", "new_password")
-                        .param("email", "updated@test.com")
-                        .param("phone", "13912345678")
-                        .session(session))
-                .andExpect(status().is3xxRedirection())
-                .andExpect(redirectedUrl("user_info"))
-                .andReturn();
-
-        User updated = userDao.findByUserID("test");
-        assertNotNull(updated);
-        assertEquals("test_updated", updated.getUserName());
-        assertEquals("new_password", updated.getPassword());
-        assertEquals("updated@test.com", updated.getEmail());
-        assertEquals("13912345678", updated.getPhone());
-
-        Object userInSession = result.getRequest().getSession(false).getAttribute("user");
-        assertNotNull(userInSession);
-        assertTrue(userInSession instanceof User);
-        assertEquals("test_updated", ((User) userInSession).getUserName());
+        mockMvc.perform(get("/checkPassword.do")
+                        .param("userID", "missing")
+                        .param("password", "whatever"))
+                .andExpect(status().isOk())
+                .andExpect(content().string("false"));
     }
 
     @Test
-    @Tag("P1")
-    void itAuth12_userInfo_shouldReturnUserInfoView() throws Exception {
+    void itAuth12_updateUser_shouldRedirectAndUpdateDatabaseAndSession() throws Exception {
+        User user = buildUser("u1001", "alice", 0, "oldPass");
+        when(userService.findByUserID("u1001")).thenReturn(user);
+
+        MockMultipartFile emptyPicture = new MockMultipartFile("picture", "", "application/octet-stream", new byte[0]);
+
+        mockMvc.perform(multipart("/updateUser.do")
+                        .file(emptyPicture)
+                        .param("userID", "u1001")
+                        .param("userName", "aliceNew")
+                        .param("passwordNew", "newPass")
+                        .param("email", "new@mail.com")
+                        .param("phone", "13800000000")
+                        .sessionAttr("user", user))
+                .andExpect(status().is3xxRedirection())
+                .andExpect(redirectedUrl("user_info"));
+
+        ArgumentCaptor<User> captor = ArgumentCaptor.forClass(User.class);
+        verify(userService).updateUser(captor.capture());
+        User updated = captor.getValue();
+        assertEquals("aliceNew", updated.getUserName());
+        assertEquals("newPass", updated.getPassword());
+        assertEquals("new@mail.com", updated.getEmail());
+        assertEquals("13800000000", updated.getPhone());
+    }
+
+    @Test
+    void itAuth13_updateUserWhenPasswordEmpty_shouldKeepOldPassword() throws Exception {
+        User user = buildUser("u1001", "alice", 0, "oldPass");
+        when(userService.findByUserID("u1001")).thenReturn(user);
+
+        MockMultipartFile emptyPicture = new MockMultipartFile("picture", "", "application/octet-stream", new byte[0]);
+
+        mockMvc.perform(multipart("/updateUser.do")
+                        .file(emptyPicture)
+                        .param("userID", "u1001")
+                        .param("userName", "aliceNew")
+                        .param("passwordNew", "")
+                        .param("email", "new@mail.com")
+                        .param("phone", "13800000000")
+                        .sessionAttr("user", user))
+                .andExpect(status().is3xxRedirection());
+
+        ArgumentCaptor<User> captor = ArgumentCaptor.forClass(User.class);
+        verify(userService).updateUser(captor.capture());
+        User updated = captor.getValue();
+        assertEquals("oldPass", updated.getPassword());
+    }
+
+    @Test
+    void itAuth14_userInfo_shouldReturnUserInfoView() throws Exception {
         mockMvc.perform(get("/user_info"))
                 .andExpect(status().isOk())
                 .andExpect(view().name("user_info"));
+    }
+
+    @Test
+    void itAuth15_updateUser_userMissing_shouldReturnNotFoundInsteadOfServerError() throws Exception {
+        when(userService.findByUserID("missing")).thenReturn(null);
+        MockMultipartFile emptyPicture = new MockMultipartFile("picture", "", "application/octet-stream", new byte[0]);
+
+        mockMvc.perform(multipart("/updateUser.do")
+                        .file(emptyPicture)
+                        .param("userID", "missing")
+                        .param("userName", "any")
+                        .param("passwordNew", "new")
+                        .param("email", "x@mail.com")
+                        .param("phone", "13800000000"))
+                .andExpect(status().isNotFound());
+    }
+
+    private User buildUser(String userID, String userName, int isAdmin, String password) {
+        User user = new User();
+        user.setUserID(userID);
+        user.setUserName(userName);
+        user.setIsadmin(isAdmin);
+        user.setPassword(password);
+        user.setEmail(userID + "@mail.com");
+        user.setPhone("13000000000");
+        user.setPicture("");
+        return user;
     }
 }

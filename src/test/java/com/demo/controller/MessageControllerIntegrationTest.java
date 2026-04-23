@@ -1,27 +1,33 @@
 package com.demo.controller;
 
-import com.demo.dao.MessageDao;
-import com.demo.dao.UserDao;
+import com.demo.controller.user.MessageController;
 import com.demo.entity.Message;
-import com.demo.exception.LoginException;
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
-import org.junit.jupiter.api.Tag;
+import com.demo.entity.User;
+import com.demo.entity.vo.MessageVo;
+import com.demo.service.MessageService;
+import com.demo.service.MessageVoService;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
-import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
-import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.mock.web.MockHttpSession;
+import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
+import org.mockito.InjectMocks;
+import org.mockito.Mock;
+import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageImpl;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.test.web.servlet.MockMvc;
-import org.springframework.transaction.annotation.Transactional;
+import org.springframework.test.web.servlet.setup.MockMvcBuilders;
+import org.springframework.web.servlet.view.InternalResourceViewResolver;
 
 import java.time.LocalDateTime;
-import java.util.Iterator;
-import java.util.UUID;
+import java.util.Arrays;
+import java.util.Collections;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertNotNull;
-import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
@@ -30,42 +36,44 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.view;
 
-@SpringBootTest
-@AutoConfigureMockMvc
-@Transactional
+@ExtendWith(MockitoExtension.class)
 class MessageControllerIntegrationTest {
 
-    @Autowired
+    @Mock
+    private MessageService messageService;
+
+    @Mock
+    private MessageVoService messageVoService;
+
+    @InjectMocks
+    private MessageController messageController;
+
     private MockMvc mockMvc;
 
-    @Autowired
-    private MessageDao messageDao;
-
-    @Autowired
-    private UserDao userDao;
-
-    @Autowired
-    private ObjectMapper objectMapper;
-
-    private MockHttpSession userSession() {
-        MockHttpSession session = new MockHttpSession();
-        session.setAttribute("user", userDao.findByUserID("test"));
-        return session;
+    @BeforeEach
+    void setUp() {
+        mockMvc = MockMvcBuilders.standaloneSetup(messageController)
+                .setViewResolvers(viewResolver())
+                .build();
     }
 
-    private Message createMessage(String userId, int state, String content) {
-        Message message = new Message();
-        message.setUserID(userId);
-        message.setState(state);
-        message.setContent(content);
-        message.setTime(LocalDateTime.now());
-        return messageDao.save(message);
+    private InternalResourceViewResolver viewResolver() {
+        InternalResourceViewResolver resolver = new InternalResourceViewResolver();
+        resolver.setPrefix("/templates/");
+        resolver.setSuffix(".html");
+        return resolver;
     }
 
     @Test
-    @Tag("P0")
     void itMsg01_messageListWithSession_shouldReturnViewAndModels() throws Exception {
-        mockMvc.perform(get("/message_list").session(userSession()))
+        Page<Message> passPage = new PageImpl<>(Collections.singletonList(buildMessage(1, "u1001", MessageService.STATE_PASS)), PageRequest.of(0, 5), 6);
+        Page<Message> userPage = new PageImpl<>(Collections.singletonList(buildMessage(2, "u1001", MessageService.STATE_NO_AUDIT)), PageRequest.of(0, 5), 4);
+
+        when(messageService.findPassState(any())).thenReturn(passPage);
+        when(messageVoService.returnVo(any())).thenReturn(Collections.singletonList(buildMessageVo(1, "u1001")));
+        when(messageService.findByUser(any(), any())).thenReturn(userPage);
+
+        mockMvc.perform(get("/message_list").sessionAttr("user", buildUser("u1001")))
                 .andExpect(status().isOk())
                 .andExpect(view().name("message_list"))
                 .andExpect(model().attributeExists("total"))
@@ -73,108 +81,128 @@ class MessageControllerIntegrationTest {
     }
 
     @Test
-    @Tag("P0")
-    void itMsg02_messageListWithoutSession_shouldThrowLoginException() throws Exception {
+    void itMsg02_messageListWithoutSession_shouldRedirectToLogin() throws Exception {
+        when(messageService.findPassState(any())).thenReturn(new PageImpl<>(Collections.emptyList()));
+        when(messageVoService.returnVo(any())).thenReturn(Collections.emptyList());
+
         mockMvc.perform(get("/message_list"))
-                .andExpect(status().is5xxServerError())
-                .andExpect(result -> assertTrue(result.getResolvedException() instanceof LoginException));
+                .andExpect(status().is3xxRedirection())
+                .andExpect(redirectedUrl("/login"));
     }
 
     @Test
-    @Tag("P0")
     void itMsg03_getPublicMessageList_shouldReturnOnlyPassStateMessages() throws Exception {
-        String json = mockMvc.perform(get("/message/getMessageList").param("page", "1"))
-                .andExpect(status().isOk())
-                .andReturn()
-                .getResponse()
-                .getContentAsString();
+        Page<Message> passPage = new PageImpl<>(Collections.singletonList(buildMessage(3, "u1001", MessageService.STATE_PASS)));
+        when(messageService.findPassState(any())).thenReturn(passPage);
+        when(messageVoService.returnVo(any())).thenReturn(Collections.singletonList(buildMessageVo(3, "u1001")));
 
-        JsonNode array = objectMapper.readTree(json);
-        assertTrue(array.isArray());
-        Iterator<JsonNode> it = array.elements();
-        while (it.hasNext()) {
-            JsonNode node = it.next();
-            assertEquals(2, node.get("state").asInt());
-        }
+        mockMvc.perform(get("/message/getMessageList").param("page", "1"))
+                .andExpect(status().isOk())
+                .andExpect(content().json("[{\"messageID\":3,\"userID\":\"u1001\"}]", false));
     }
 
     @Test
-    @Tag("P0")
     void itMsg04_getUserMessageListWithSession_shouldReturnMessagesOfLoggedUser() throws Exception {
-        String json = mockMvc.perform(get("/message/findUserList")
+        Page<Message> userPage = new PageImpl<>(Arrays.asList(
+                buildMessage(4, "u1001", MessageService.STATE_NO_AUDIT),
+                buildMessage(5, "u1001", MessageService.STATE_PASS)
+        ));
+        when(messageService.findByUser(any(), any())).thenReturn(userPage);
+        when(messageVoService.returnVo(any())).thenReturn(Arrays.asList(buildMessageVo(4, "u1001"), buildMessageVo(5, "u1001")));
+
+        mockMvc.perform(get("/message/findUserList")
                         .param("page", "1")
-                        .session(userSession()))
+                        .sessionAttr("user", buildUser("u1001")))
                 .andExpect(status().isOk())
-                .andReturn()
-                .getResponse()
-                .getContentAsString();
-
-        JsonNode array = objectMapper.readTree(json);
-        assertTrue(array.isArray());
-        Iterator<JsonNode> it = array.elements();
-        while (it.hasNext()) {
-            JsonNode node = it.next();
-            assertEquals("test", node.get("userID").asText());
-        }
+                .andExpect(content().json("[{\"messageID\":4},{\"messageID\":5}]", false));
     }
 
     @Test
-    @Tag("P0")
-    void itMsg05_getUserMessageListWithoutSession_shouldThrowLoginException() throws Exception {
+    void itMsg05_getUserMessageListWithoutSession_shouldRedirectToLogin() throws Exception {
         mockMvc.perform(get("/message/findUserList").param("page", "1"))
-                .andExpect(status().is5xxServerError())
-                .andExpect(result -> assertTrue(result.getResolvedException() instanceof LoginException));
+                .andExpect(status().is3xxRedirection())
+                .andExpect(redirectedUrl("/login"));
     }
 
     @Test
-    @Tag("P0")
     void itMsg06_sendMessage_shouldInsertNoAuditMessageAndRedirect() throws Exception {
-        long before = messageDao.count();
-        String uniqueContent = "it_msg_" + UUID.randomUUID();
-
         mockMvc.perform(post("/sendMessage")
-                        .param("userID", "test")
-                        .param("content", uniqueContent))
+                        .param("userID", "u1001")
+                        .param("content", "hello"))
                 .andExpect(status().is3xxRedirection())
                 .andExpect(redirectedUrl("/message_list"));
 
-        long after = messageDao.count();
-        assertEquals(before + 1, after);
-
-        boolean exists = messageDao.findAll().stream()
-                .anyMatch(m -> uniqueContent.equals(m.getContent())
-                        && "test".equals(m.getUserID())
-                        && m.getState() == 1);
-        assertTrue(exists);
+        ArgumentCaptor<Message> captor = ArgumentCaptor.forClass(Message.class);
+        verify(messageService).create(captor.capture());
+        Message created = captor.getValue();
+        assertEquals("u1001", created.getUserID());
+        assertEquals("hello", created.getContent());
+        assertEquals(MessageService.STATE_NO_AUDIT, created.getState());
     }
 
     @Test
-    @Tag("P0")
     void itMsg07_modifyMessage_shouldReturnTrueAndResetStateToNoAudit() throws Exception {
-        Message message = createMessage("test", 2, "old_content");
+        Message message = buildMessage(6, "u1001", MessageService.STATE_PASS);
+        when(messageService.findById(6)).thenReturn(message);
 
         mockMvc.perform(post("/modifyMessage.do")
-                        .param("messageID", String.valueOf(message.getMessageID()))
-                        .param("content", "new_content"))
+                        .param("messageID", "6")
+                        .param("content", "updated"))
                 .andExpect(status().isOk())
                 .andExpect(content().string("true"));
 
-        Message updated = messageDao.findByMessageID(message.getMessageID());
-        assertNotNull(updated);
-        assertEquals("new_content", updated.getContent());
-        assertEquals(1, updated.getState());
+        ArgumentCaptor<Message> captor = ArgumentCaptor.forClass(Message.class);
+        verify(messageService).update(captor.capture());
+        Message updated = captor.getValue();
+        assertEquals("updated", updated.getContent());
+        assertEquals(MessageService.STATE_NO_AUDIT, updated.getState());
     }
 
     @Test
-    @Tag("P0")
-    void itMsg08_deleteMessage_shouldReturnTrueAndDeleteRecord() throws Exception {
-        Message message = createMessage("test", 1, "to_delete");
+    void itMsg08_modifyMessageWhenTargetMissing_shouldReturnNotFound() throws Exception {
+        when(messageService.findById(404)).thenReturn(null);
 
-        mockMvc.perform(post("/delMessage.do")
-                        .param("messageID", String.valueOf(message.getMessageID())))
+        mockMvc.perform(post("/modifyMessage.do")
+                        .param("messageID", "404")
+                        .param("content", "updated"))
+                .andExpect(status().isNotFound());
+    }
+
+    @Test
+    void itMsg09_deleteMessage_shouldReturnTrueAndDeleteRecord() throws Exception {
+        mockMvc.perform(post("/delMessage.do").param("messageID", "9"))
                 .andExpect(status().isOk())
                 .andExpect(content().string("true"));
 
-        assertEquals(null, messageDao.findByMessageID(message.getMessageID()));
+        verify(messageService).delById(9);
+    }
+
+    private User buildUser(String userID) {
+        User user = new User();
+        user.setUserID(userID);
+        user.setUserName("name");
+        return user;
+    }
+
+    private Message buildMessage(int id, String userID, int state) {
+        Message message = new Message();
+        message.setMessageID(id);
+        message.setUserID(userID);
+        message.setContent("c-" + id);
+        message.setState(state);
+        message.setTime(LocalDateTime.of(2026, 4, 23, 11, 0, 0));
+        return message;
+    }
+
+    private MessageVo buildMessageVo(int id, String userID) {
+        MessageVo vo = new MessageVo();
+        vo.setMessageID(id);
+        vo.setUserID(userID);
+        vo.setContent("c-" + id);
+        vo.setState(MessageService.STATE_PASS);
+        vo.setUserName("name");
+        vo.setPicture("pic.png");
+        vo.setTime(LocalDateTime.of(2026, 4, 23, 11, 0, 0));
+        return vo;
     }
 }

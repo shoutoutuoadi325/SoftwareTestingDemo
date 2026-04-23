@@ -6,7 +6,6 @@ import com.demo.entity.Order;
 import com.demo.entity.Venue;
 import com.demo.entity.vo.OrderVo;
 import com.demo.service.impl.OrderVoServiceImpl;
-import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
@@ -18,6 +17,7 @@ import java.util.Arrays;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
@@ -33,34 +33,59 @@ class OrderVoServiceTest {
     private OrderVoServiceImpl orderVoService;
 
     @Test
-    @Tag("P1")
     void utOvs01_returnOrderVoByOrderID_shouldContainVenueName() {
-        Order order = new Order(1, "test", 16, 2, LocalDateTime.now(), LocalDateTime.now().plusDays(1), 2, 1000);
-        Venue venue = new Venue(16, "场馆2", "d", 500, "", "上海", "09:00", "18:00");
+        Order order = buildOrder(1, "u1001", 10, OrderService.STATE_WAIT);
+        Venue venue = buildVenue(10, "羽毛球馆");
         when(orderDao.findByOrderID(1)).thenReturn(order);
-        when(venueDao.findByVenueID(16)).thenReturn(venue);
+        when(venueDao.findByVenueID(10)).thenReturn(venue);
 
         OrderVo result = orderVoService.returnOrderVoByOrderID(1);
 
         assertEquals(1, result.getOrderID());
-        assertEquals("场馆2", result.getVenueName());
-        assertEquals(16, result.getVenueID());
+        assertEquals("羽毛球馆", result.getVenueName());
+        assertEquals("u1001", result.getUserID());
     }
 
     @Test
-    @Tag("P1")
     void utOvs02_returnVo_shouldReturnMappedListWithSameSize() {
-        Order o1 = new Order(1, "u", 16, 1, LocalDateTime.now(), LocalDateTime.now().plusDays(1), 1, 500);
-        Order o2 = new Order(2, "u", 17, 2, LocalDateTime.now(), LocalDateTime.now().plusDays(1), 2, 600);
-        when(orderDao.findByOrderID(1)).thenReturn(o1);
-        when(orderDao.findByOrderID(2)).thenReturn(o2);
-        when(venueDao.findByVenueID(16)).thenReturn(new Venue(16, "场馆2", "", 500, "", "", "", ""));
-        when(venueDao.findByVenueID(17)).thenReturn(new Venue(17, "场馆3", "", 300, "", "", "", ""));
+        Order order1 = buildOrder(1, "u1001", 10, OrderService.STATE_WAIT);
+        Order order2 = buildOrder(2, "u1002", 11, OrderService.STATE_FINISH);
+        when(orderDao.findByOrderID(1)).thenReturn(order1);
+        when(orderDao.findByOrderID(2)).thenReturn(order2);
+        when(venueDao.findByVenueID(10)).thenReturn(buildVenue(10, "羽毛球馆"));
+        when(venueDao.findByVenueID(11)).thenReturn(buildVenue(11, "网球馆"));
 
-        List<OrderVo> result = orderVoService.returnVo(Arrays.asList(o1, o2));
+        List<OrderVo> result = orderVoService.returnVo(Arrays.asList(order1, order2));
 
         assertEquals(2, result.size());
-        assertEquals(1, result.get(0).getOrderID());
-        assertEquals(2, result.get(1).getOrderID());
+        assertEquals("羽毛球馆", result.get(0).getVenueName());
+        assertEquals("网球馆", result.get(1).getVenueName());
+    }
+
+    @Test
+    void utOvs03_returnOrderVoByOrderID_whenOrderMissing_shouldThrowIllegalArgumentException() {
+        when(orderDao.findByOrderID(404)).thenReturn(null);
+
+        assertThrows(IllegalArgumentException.class, () -> orderVoService.returnOrderVoByOrderID(404));
+    }
+
+    private Order buildOrder(int orderID, String userID, int venueID, int state) {
+        Order order = new Order();
+        order.setOrderID(orderID);
+        order.setUserID(userID);
+        order.setVenueID(venueID);
+        order.setState(state);
+        order.setHours(2);
+        order.setTotal(100);
+        order.setOrderTime(LocalDateTime.of(2026, 4, 23, 10, 0, 0));
+        order.setStartTime(LocalDateTime.of(2026, 4, 24, 9, 0, 0));
+        return order;
+    }
+
+    private Venue buildVenue(int venueID, String venueName) {
+        Venue venue = new Venue();
+        venue.setVenueID(venueID);
+        venue.setVenueName(venueName);
+        return venue;
     }
 }

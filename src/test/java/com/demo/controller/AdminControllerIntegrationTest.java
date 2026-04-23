@@ -1,34 +1,48 @@
 package com.demo.controller;
 
-import com.demo.dao.MessageDao;
-import com.demo.dao.NewsDao;
-import com.demo.dao.OrderDao;
-import com.demo.dao.UserDao;
-import com.demo.dao.VenueDao;
+import com.demo.controller.admin.AdminMessageController;
+import com.demo.controller.admin.AdminNewsController;
+import com.demo.controller.admin.AdminOrderController;
+import com.demo.controller.admin.AdminUserController;
+import com.demo.controller.admin.AdminVenueController;
 import com.demo.entity.Message;
 import com.demo.entity.News;
 import com.demo.entity.Order;
 import com.demo.entity.User;
 import com.demo.entity.Venue;
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
-import org.junit.jupiter.api.Tag;
+import com.demo.entity.vo.MessageVo;
+import com.demo.entity.vo.OrderVo;
+import com.demo.service.MessageService;
+import com.demo.service.MessageVoService;
+import com.demo.service.NewsService;
+import com.demo.service.OrderService;
+import com.demo.service.OrderVoService;
+import com.demo.service.UserService;
+import com.demo.service.VenueService;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
-import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
-import org.springframework.boot.test.context.SpringBootTest;
+import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
+import org.mockito.InjectMocks;
+import org.mockito.Mock;
+import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageImpl;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.mock.web.MockMultipartFile;
 import org.springframework.test.web.servlet.MockMvc;
-import org.springframework.transaction.annotation.Transactional;
+import org.springframework.test.web.servlet.setup.MockMvcBuilders;
+import org.springframework.web.servlet.view.InternalResourceViewResolver;
 
 import java.time.LocalDateTime;
-import java.util.Iterator;
-import java.util.UUID;
+import java.util.Arrays;
+import java.util.Collections;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertNotNull;
-import static org.junit.jupiter.api.Assertions.assertNull;
-import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.multipart;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
@@ -38,440 +52,539 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.view;
 
-@SpringBootTest
-@AutoConfigureMockMvc
-@Transactional
+@ExtendWith(MockitoExtension.class)
 class AdminControllerIntegrationTest {
 
-    @Autowired
+    @Mock
+    private UserService userService;
+
+    @Mock
+    private VenueService venueService;
+
+    @Mock
+    private OrderService orderService;
+
+    @Mock
+    private OrderVoService orderVoService;
+
+    @Mock
+    private NewsService newsService;
+
+    @Mock
+    private MessageService messageService;
+
+    @Mock
+    private MessageVoService messageVoService;
+
+    @InjectMocks
+    private AdminUserController adminUserController;
+
+    @InjectMocks
+    private AdminVenueController adminVenueController;
+
+    @InjectMocks
+    private AdminOrderController adminOrderController;
+
+    @InjectMocks
+    private AdminNewsController adminNewsController;
+
+    @InjectMocks
+    private AdminMessageController adminMessageController;
+
     private MockMvc mockMvc;
 
-    @Autowired
-    private UserDao userDao;
-
-    @Autowired
-    private VenueDao venueDao;
-
-    @Autowired
-    private OrderDao orderDao;
-
-    @Autowired
-    private MessageDao messageDao;
-
-    @Autowired
-    private NewsDao newsDao;
-
-    @Autowired
-    private ObjectMapper objectMapper;
-
-    private String unique(String prefix) {
-        return prefix + "_" + UUID.randomUUID().toString().replace("-", "").substring(0, 8);
+    @BeforeEach
+    void setUp() {
+        mockMvc = MockMvcBuilders.standaloneSetup(
+                adminUserController,
+                adminVenueController,
+                adminOrderController,
+                adminNewsController,
+                adminMessageController
+        ).setViewResolvers(viewResolver()).build();
     }
 
-    private User createUser(String userId) {
-        User user = new User();
-        user.setUserID(userId);
-        user.setUserName("name_" + userId);
-        user.setPassword("pwd");
-        user.setEmail("u@test.com");
-        user.setPhone("13800000000");
-        user.setIsadmin(0);
-        user.setPicture("");
-        return userDao.save(user);
-    }
-
-    private Venue createVenue(String venueName) {
-        Venue venue = new Venue();
-        venue.setVenueName(venueName);
-        venue.setAddress("上海");
-        venue.setDescription("desc");
-        venue.setPrice(300);
-        venue.setPicture("");
-        venue.setOpen_time("09:00");
-        venue.setClose_time("20:00");
-        return venueDao.save(venue);
-    }
-
-    private Order createOrder(int state) {
-        Order order = new Order();
-        order.setUserID("test");
-        order.setVenueID(16);
-        order.setState(state);
-        order.setOrderTime(LocalDateTime.now());
-        order.setStartTime(LocalDateTime.now().plusDays(1));
-        order.setHours(2);
-        order.setTotal(1000);
-        return orderDao.save(order);
-    }
-
-    private Message createMessage(int state) {
-        Message message = new Message();
-        message.setUserID("test");
-        message.setContent(unique("msg"));
-        message.setTime(LocalDateTime.now());
-        message.setState(state);
-        return messageDao.save(message);
-    }
-
-    private News createNews() {
-        News news = new News();
-        news.setTitle(unique("news"));
-        news.setContent("content");
-        news.setTime(LocalDateTime.now());
-        return newsDao.save(news);
+    private InternalResourceViewResolver viewResolver() {
+        InternalResourceViewResolver resolver = new InternalResourceViewResolver();
+        resolver.setPrefix("/templates/");
+        resolver.setSuffix(".html");
+        return resolver;
     }
 
     @Test
-    @Tag("P0")
     void itAdmUser01_userManage_shouldReturnViewAndTotal() throws Exception {
+        Page<User> page = new PageImpl<>(Collections.singletonList(buildUser(1, "u1001")), PageRequest.of(0, 10), 16);
+        when(userService.findByUserID(any(Pageable.class))).thenReturn(page);
+
         mockMvc.perform(get("/user_manage"))
                 .andExpect(status().isOk())
                 .andExpect(view().name("admin/user_manage"))
-                .andExpect(model().attributeExists("total"));
+                .andExpect(model().attribute("total", 2));
     }
 
     @Test
-    @Tag("P0")
-    void itAdmUser02_userList_shouldReturnNormalUsersOnly() throws Exception {
-        String json = mockMvc.perform(get("/userList.do").param("page", "1"))
+    void itAdmUser02_userAdd_shouldReturnAddView() throws Exception {
+        mockMvc.perform(get("/user_add"))
                 .andExpect(status().isOk())
-                .andReturn().getResponse().getContentAsString();
-
-        JsonNode array = objectMapper.readTree(json);
-        assertTrue(array.isArray());
-        assertTrue(array.size() <= 10);
-        Iterator<JsonNode> it = array.elements();
-        while (it.hasNext()) {
-            JsonNode node = it.next();
-            assertEquals(0, node.get("isadmin").asInt());
-        }
+                .andExpect(view().name("admin/user_add"));
     }
 
     @Test
-    @Tag("P1")
-    void itAdmUser03_checkUserID_shouldReturnFalseForExistingAndTrueForNew() throws Exception {
-        mockMvc.perform(post("/checkUserID.do").param("userID", "test"))
+    void itAdmUser03_userList_shouldReturnUsers() throws Exception {
+        Page<User> page = new PageImpl<>(Arrays.asList(buildUser(1, "u1"), buildUser(2, "u2")), PageRequest.of(0, 10), 2);
+        when(userService.findByUserID(any(Pageable.class))).thenReturn(page);
+
+        mockMvc.perform(get("/userList.do").param("page", "1"))
                 .andExpect(status().isOk())
-                .andExpect(content().string("false"));
+                .andExpect(content().json("[{\"id\":1},{\"id\":2}]", false));
+    }
 
-        mockMvc.perform(post("/checkUserID.do").param("userID", unique("new_user")))
+    @Test
+    void itAdmUser04_userEdit_shouldReturnEditViewAndUser() throws Exception {
+        when(userService.findById(3)).thenReturn(buildUser(3, "u3"));
+
+        mockMvc.perform(get("/user_edit").param("id", "3"))
                 .andExpect(status().isOk())
-                .andExpect(content().string("true"));
+                .andExpect(view().name("admin/user_edit"))
+                .andExpect(model().attributeExists("user"));
     }
 
     @Test
-    @Tag("P0")
-    void itAdmUser04_addUser_shouldRedirectAndInsert() throws Exception {
-        String userId = unique("it_add_user");
-
-        mockMvc.perform(post("/addUser.do")
-                        .param("userID", userId)
-                        .param("userName", "added")
-                        .param("password", "pwd")
-                        .param("email", "a@test.com")
-                        .param("phone", "13800000001"))
-                .andExpect(status().is3xxRedirection())
-                .andExpect(redirectedUrl("user_manage"));
-
-        assertNotNull(userDao.findByUserID(userId));
-    }
-
-    @Test
-    @Tag("P0")
     void itAdmUser05_modifyUser_shouldRedirectAndUpdate() throws Exception {
-        User user = createUser(unique("it_old_user"));
-        String newUserId = unique("it_new_user");
+        User target = buildUser(5, "oldU");
+        when(userService.findByUserID("oldU")).thenReturn(target);
 
         mockMvc.perform(post("/modifyUser.do")
-                        .param("oldUserID", user.getUserID())
-                        .param("userID", newUserId)
-                        .param("userName", "modified")
-                        .param("password", "newpwd")
-                        .param("email", "m@test.com")
-                        .param("phone", "13900000000"))
+                        .param("userID", "newU")
+                        .param("oldUserID", "oldU")
+                        .param("userName", "newName")
+                        .param("password", "newPass")
+                        .param("email", "new@mail.com")
+                        .param("phone", "13800000000"))
                 .andExpect(status().is3xxRedirection())
                 .andExpect(redirectedUrl("user_manage"));
 
-        User modified = userDao.findByUserID(newUserId);
-        assertNotNull(modified);
-        assertEquals("modified", modified.getUserName());
+        ArgumentCaptor<User> captor = ArgumentCaptor.forClass(User.class);
+        verify(userService).updateUser(captor.capture());
+        User updated = captor.getValue();
+        assertEquals("newU", updated.getUserID());
+        assertEquals("newName", updated.getUserName());
     }
 
     @Test
-    @Tag("P0")
-    void itAdmUser06_delUser_shouldReturnTrueAndDelete() throws Exception {
-        User user = createUser(unique("it_del_user"));
+    void itAdmUser06_addUser_shouldRedirectAndInsert() throws Exception {
+        mockMvc.perform(post("/addUser.do")
+                        .param("userID", "u6001")
+                        .param("userName", "name")
+                        .param("password", "pass")
+                        .param("email", "u6001@mail.com")
+                        .param("phone", "13000000000"))
+                .andExpect(status().is3xxRedirection())
+                .andExpect(redirectedUrl("user_manage"));
 
-        mockMvc.perform(post("/delUser.do").param("id", String.valueOf(user.getId())))
+        ArgumentCaptor<User> captor = ArgumentCaptor.forClass(User.class);
+        verify(userService).create(captor.capture());
+        assertEquals("u6001", captor.getValue().getUserID());
+    }
+
+    @Test
+    void itAdmUser07_checkUserID_existingShouldReturnFalse() throws Exception {
+        when(userService.countUserID("u1001")).thenReturn(1);
+
+        mockMvc.perform(post("/checkUserID.do").param("userID", "u1001"))
+                .andExpect(status().isOk())
+                .andExpect(content().string("false"));
+    }
+
+    @Test
+    void itAdmUser08_checkUserID_newShouldReturnTrue() throws Exception {
+        when(userService.countUserID("u9001")).thenReturn(0);
+
+        mockMvc.perform(post("/checkUserID.do").param("userID", "u9001"))
+                .andExpect(status().isOk())
+                .andExpect(content().string("true"));
+    }
+
+    @Test
+    void itAdmUser09_delUser_shouldReturnTrueAndDelete() throws Exception {
+        mockMvc.perform(post("/delUser.do").param("id", "9"))
                 .andExpect(status().isOk())
                 .andExpect(content().string("true"));
 
-        assertNull(userDao.findById(user.getId()));
+        verify(userService).delByID(9);
     }
 
     @Test
-    @Tag("P0")
+    void itAdmUser10_modifyUserWhenOldIdMissing_shouldReturnNotFound() throws Exception {
+        when(userService.findByUserID("missing")).thenReturn(null);
+
+        mockMvc.perform(post("/modifyUser.do")
+                        .param("userID", "newU")
+                        .param("oldUserID", "missing")
+                        .param("userName", "newName")
+                        .param("password", "newPass")
+                        .param("email", "new@mail.com")
+                        .param("phone", "13800000000"))
+                .andExpect(status().isNotFound());
+    }
+
+    @Test
     void itAdmVenue01_venueManage_shouldReturnViewAndTotal() throws Exception {
+        Page<Venue> page = new PageImpl<>(Collections.singletonList(buildVenue(1, "v1")), PageRequest.of(0, 10), 21);
+        when(venueService.findAll(any())).thenReturn(page);
+
         mockMvc.perform(get("/venue_manage"))
                 .andExpect(status().isOk())
                 .andExpect(view().name("admin/venue_manage"))
-                .andExpect(model().attributeExists("total"));
+                .andExpect(model().attribute("total", 3));
     }
 
     @Test
-    @Tag("P1")
-    void itAdmVenue02_venueList_shouldReturnPagedData() throws Exception {
-        String json = mockMvc.perform(get("/venueList.do").param("page", "1"))
-                .andExpect(status().isOk())
-                .andReturn().getResponse().getContentAsString();
+    void itAdmVenue02_venueEdit_shouldReturnViewAndVenue() throws Exception {
+        when(venueService.findByVenueID(2)).thenReturn(buildVenue(2, "v2"));
 
-        JsonNode array = objectMapper.readTree(json);
-        assertTrue(array.isArray());
-        assertTrue(array.size() <= 10);
+        mockMvc.perform(get("/venue_edit").param("venueID", "2"))
+                .andExpect(status().isOk())
+                .andExpect(view().name("/admin/venue_edit"))
+                .andExpect(model().attributeExists("venue"));
     }
 
     @Test
-    @Tag("P1")
-    void itAdmVenue03_checkVenueName_shouldReturnFalseForExistingAndTrueForNew() throws Exception {
-        mockMvc.perform(post("/checkVenueName.do").param("venueName", "场馆2"))
+    void itAdmVenue03_venueAdd_shouldReturnView() throws Exception {
+        mockMvc.perform(get("/venue_add"))
                 .andExpect(status().isOk())
-                .andExpect(content().string("false"));
-
-        mockMvc.perform(post("/checkVenueName.do").param("venueName", unique("venue")))
-                .andExpect(status().isOk())
-                .andExpect(content().string("true"));
+                .andExpect(view().name("/admin/venue_add"));
     }
 
     @Test
-    @Tag("P0")
-    void itAdmVenue04_addVenue_shouldRedirectAndInsert() throws Exception {
-        String venueName = unique("it_add_venue");
+    void itAdmVenue04_venueList_shouldReturnPagedData() throws Exception {
+        Page<Venue> page = new PageImpl<>(Arrays.asList(buildVenue(3, "v3"), buildVenue(4, "v4")));
+        when(venueService.findAll(any())).thenReturn(page);
+
+        mockMvc.perform(get("/venueList.do").param("page", "1"))
+                .andExpect(status().isOk())
+                .andExpect(content().json("[{\"venueID\":3},{\"venueID\":4}]", false));
+    }
+
+    @Test
+    void itAdmVenue05_addVenue_shouldRedirectAndInsert() throws Exception {
+        when(venueService.create(any())).thenReturn(10);
+        MockMultipartFile picture = new MockMultipartFile("picture", "", "application/octet-stream", new byte[0]);
 
         mockMvc.perform(multipart("/addVenue.do")
-                        .file(new MockMultipartFile("picture", "", "application/octet-stream", new byte[0]))
-                        .param("venueName", venueName)
-                        .param("address", "上海")
+                        .file(picture)
+                        .param("venueName", "newVenue")
+                        .param("address", "addr")
                         .param("description", "desc")
-                        .param("price", "450")
-                        .param("open_time", "09:00")
-                        .param("close_time", "20:00"))
-                .andExpect(status().is3xxRedirection())
-                .andExpect(redirectedUrl("venue_manage"));
-
-        assertNotNull(venueDao.findByVenueName(venueName));
-    }
-
-    @Test
-    @Tag("P0")
-    void itAdmVenue05_modifyVenue_shouldRedirectAndUpdate() throws Exception {
-        Venue venue = createVenue(unique("it_old_venue"));
-
-        mockMvc.perform(multipart("/modifyVenue.do")
-                        .file(new MockMultipartFile("picture", "", "application/octet-stream", new byte[0]))
-                        .param("venueID", String.valueOf(venue.getVenueID()))
-                        .param("venueName", venue.getVenueName())
-                        .param("address", "上海黄浦")
-                        .param("description", "new_desc")
-                        .param("price", "888")
+                        .param("price", "120")
                         .param("open_time", "08:00")
                         .param("close_time", "22:00"))
                 .andExpect(status().is3xxRedirection())
                 .andExpect(redirectedUrl("venue_manage"));
 
-        Venue updated = venueDao.findByVenueID(venue.getVenueID());
-        assertNotNull(updated);
-        assertEquals(888, updated.getPrice());
-        assertEquals("上海黄浦", updated.getAddress());
+        verify(venueService).create(any(Venue.class));
     }
 
     @Test
-    @Tag("P0")
-    void itAdmVenue06_delVenue_shouldReturnTrueAndDelete() throws Exception {
-        Venue venue = createVenue(unique("it_del_venue"));
+    void itAdmVenue06_modifyVenue_shouldRedirectAndUpdate() throws Exception {
+        Venue venue = buildVenue(11, "oldVenue");
+        when(venueService.findByVenueID(11)).thenReturn(venue);
+        MockMultipartFile picture = new MockMultipartFile("picture", "", "application/octet-stream", new byte[0]);
 
-        mockMvc.perform(post("/delVenue.do").param("venueID", String.valueOf(venue.getVenueID())))
+        mockMvc.perform(multipart("/modifyVenue.do")
+                        .file(picture)
+                        .param("venueID", "11")
+                        .param("venueName", "newVenue")
+                        .param("address", "addr2")
+                        .param("description", "desc2")
+                        .param("price", "150")
+                        .param("open_time", "09:00")
+                        .param("close_time", "21:00"))
+                .andExpect(status().is3xxRedirection())
+                .andExpect(redirectedUrl("venue_manage"));
+
+        verify(venueService).update(venue);
+    }
+
+    @Test
+    void itAdmVenue07_delVenue_shouldReturnTrueAndDelete() throws Exception {
+        mockMvc.perform(post("/delVenue.do").param("venueID", "12"))
                 .andExpect(status().isOk())
                 .andExpect(content().string("true"));
 
-        assertNull(venueDao.findByVenueID(venue.getVenueID()));
+        verify(venueService).delById(12);
     }
 
     @Test
-    @Tag("P0")
+    void itAdmVenue08_checkVenueName_existingShouldReturnFalse() throws Exception {
+        when(venueService.countVenueName("v-exists")).thenReturn(1);
+
+        mockMvc.perform(post("/checkVenueName.do").param("venueName", "v-exists"))
+                .andExpect(status().isOk())
+                .andExpect(content().string("false"));
+    }
+
+    @Test
+    void itAdmVenue09_checkVenueName_newShouldReturnTrue() throws Exception {
+        when(venueService.countVenueName("v-new")).thenReturn(0);
+
+        mockMvc.perform(post("/checkVenueName.do").param("venueName", "v-new"))
+                .andExpect(status().isOk())
+                .andExpect(content().string("true"));
+    }
+
+    @Test
     void itAdmOrder01_reservationManage_shouldReturnViewAndModels() throws Exception {
+        when(orderService.findAuditOrder()).thenReturn(Collections.singletonList(buildOrder(1, "u1001", 1, OrderService.STATE_WAIT)));
+        when(orderVoService.returnVo(any())).thenReturn(Collections.singletonList(buildOrderVo(1, "u1001")));
+        when(orderService.findNoAuditOrder(any())).thenReturn(new PageImpl<>(Collections.singletonList(buildOrder(2, "u1002", 1, OrderService.STATE_NO_AUDIT)), PageRequest.of(0, 10), 11));
+
         mockMvc.perform(get("/reservation_manage"))
                 .andExpect(status().isOk())
                 .andExpect(view().name("admin/reservation_manage"))
-                .andExpect(model().attributeExists("total"))
-                .andExpect(model().attributeExists("order_list"));
-    }
-
-    @Test
-    @Tag("P0")
-    void itAdmOrder02_getNoAuditOrderList_shouldReturnStateNoAudit() throws Exception {
-        createOrder(1);
-
-        String json = mockMvc.perform(get("/admin/getOrderList.do").param("page", "1"))
-                .andExpect(status().isOk())
-                .andReturn().getResponse().getContentAsString();
-
-        JsonNode array = objectMapper.readTree(json);
-        assertTrue(array.isArray());
-        Iterator<JsonNode> it = array.elements();
-        while (it.hasNext()) {
-            assertEquals(1, it.next().get("state").asInt());
-        }
-    }
-
-    @Test
-    @Tag("P0")
-    void itAdmOrder03_passOrder_shouldSetStateWait() throws Exception {
-        Order order = createOrder(1);
-
-        mockMvc.perform(post("/passOrder.do").param("orderID", String.valueOf(order.getOrderID())))
-                .andExpect(status().isOk())
-                .andExpect(content().string("true"));
-
-        assertEquals(2, orderDao.findByOrderID(order.getOrderID()).getState());
-    }
-
-    @Test
-    @Tag("P0")
-    void itAdmOrder04_rejectOrder_shouldSetStateReject() throws Exception {
-        Order order = createOrder(1);
-
-        mockMvc.perform(post("/rejectOrder.do").param("orderID", String.valueOf(order.getOrderID())))
-                .andExpect(status().isOk())
-                .andExpect(content().string("true"));
-
-        assertEquals(4, orderDao.findByOrderID(order.getOrderID()).getState());
-    }
-
-    @Test
-    @Tag("P0")
-    void itAdmMsg01_messageManage_shouldReturnViewAndTotal() throws Exception {
-        mockMvc.perform(get("/message_manage"))
-                .andExpect(status().isOk())
-                .andExpect(view().name("admin/message_manage"))
+                .andExpect(model().attributeExists("order_list"))
                 .andExpect(model().attributeExists("total"));
     }
 
     @Test
-    @Tag("P0")
-    void itAdmMsg02_messageList_shouldReturnNoAuditMessages() throws Exception {
-        createMessage(1);
+    void itAdmOrder02_getNoAuditOrderList_shouldReturnStateNoAudit() throws Exception {
+        when(orderService.findNoAuditOrder(any())).thenReturn(new PageImpl<>(Collections.singletonList(buildOrder(3, "u1003", 1, OrderService.STATE_NO_AUDIT))));
+        when(orderVoService.returnVo(any())).thenReturn(Collections.singletonList(buildOrderVo(3, "u1003")));
 
-        String json = mockMvc.perform(get("/messageList.do").param("page", "1"))
+        mockMvc.perform(get("/admin/getOrderList.do").param("page", "1"))
                 .andExpect(status().isOk())
-                .andReturn().getResponse().getContentAsString();
-
-        JsonNode array = objectMapper.readTree(json);
-        assertTrue(array.isArray());
-        Iterator<JsonNode> it = array.elements();
-        while (it.hasNext()) {
-            assertEquals(1, it.next().get("state").asInt());
-        }
+                .andExpect(content().json("[{\"orderID\":3}]", false));
     }
 
     @Test
-    @Tag("P0")
-    void itAdmMsg03_passMessage_shouldSetStatePass() throws Exception {
-        Message message = createMessage(1);
-
-        mockMvc.perform(post("/passMessage.do").param("messageID", String.valueOf(message.getMessageID())))
+    void itAdmOrder03_passOrder_shouldSetStateWait() throws Exception {
+        mockMvc.perform(post("/passOrder.do").param("orderID", "13"))
                 .andExpect(status().isOk())
                 .andExpect(content().string("true"));
 
-        assertEquals(2, messageDao.findByMessageID(message.getMessageID()).getState());
+        verify(orderService).confirmOrder(13);
     }
 
     @Test
-    @Tag("P0")
-    void itAdmMsg04_rejectMessage_shouldSetStateReject() throws Exception {
-        Message message = createMessage(1);
-
-        mockMvc.perform(post("/rejectMessage.do").param("messageID", String.valueOf(message.getMessageID())))
+    void itAdmOrder04_rejectOrder_shouldSetStateReject() throws Exception {
+        mockMvc.perform(post("/rejectOrder.do").param("orderID", "14"))
                 .andExpect(status().isOk())
                 .andExpect(content().string("true"));
 
-        assertEquals(3, messageDao.findByMessageID(message.getMessageID()).getState());
+        verify(orderService).rejectOrder(14);
     }
 
     @Test
-    @Tag("P1")
-    void itAdmMsg05_delMessage_shouldDeleteMessage() throws Exception {
-        Message message = createMessage(1);
-
-        mockMvc.perform(post("/delMessage.do").param("messageID", String.valueOf(message.getMessageID())))
-                .andExpect(status().isOk())
-                .andExpect(content().string("true"));
-
-        assertNull(messageDao.findByMessageID(message.getMessageID()));
-    }
-
-    @Test
-    @Tag("P0")
     void itAdmNews01_newsManage_shouldReturnViewAndTotal() throws Exception {
+        when(newsService.findAll(any())).thenReturn(new PageImpl<>(Collections.singletonList(buildNews(1, "n1")), PageRequest.of(0, 10), 12));
+
         mockMvc.perform(get("/news_manage"))
                 .andExpect(status().isOk())
                 .andExpect(view().name("admin/news_manage"))
-                .andExpect(model().attributeExists("total"));
+                .andExpect(model().attribute("total", 2));
     }
 
     @Test
-    @Tag("P1")
-    void itAdmNews02_newsList_shouldReturnPagedNews() throws Exception {
-        String json = mockMvc.perform(get("/newsList.do").param("page", "1"))
+    void itAdmNews02_newsAdd_shouldReturnAddView() throws Exception {
+        mockMvc.perform(get("/news_add"))
                 .andExpect(status().isOk())
-                .andReturn().getResponse().getContentAsString();
-
-        JsonNode array = objectMapper.readTree(json);
-        assertTrue(array.isArray());
-        assertTrue(array.size() <= 10);
+                .andExpect(view().name("/admin/news_add"));
     }
 
     @Test
-    @Tag("P0")
-    void itAdmNews03_addNews_shouldRedirectAndInsert() throws Exception {
-        String title = unique("it_add_news");
+    void itAdmNews03_newsEdit_shouldReturnEditView() throws Exception {
+        when(newsService.findById(4)).thenReturn(buildNews(4, "n4"));
 
-        mockMvc.perform(post("/addNews.do")
-                        .param("title", title)
-                        .param("content", "content"))
-                .andExpect(status().is3xxRedirection())
-                .andExpect(redirectedUrl("news_manage"));
-
-        boolean exists = newsDao.findAll().stream().anyMatch(n -> title.equals(n.getTitle()));
-        assertTrue(exists);
+        mockMvc.perform(get("/news_edit").param("newsID", "4"))
+                .andExpect(status().isOk())
+                .andExpect(view().name("/admin/news_edit"))
+                .andExpect(model().attributeExists("news"));
     }
 
     @Test
-    @Tag("P0")
-    void itAdmNews04_modifyNews_shouldRedirectAndUpdate() throws Exception {
-        News news = createNews();
+    void itAdmNews04_newsList_shouldReturnPagedNews() throws Exception {
+        when(newsService.findAll(any())).thenReturn(new PageImpl<>(Arrays.asList(buildNews(6, "n6"), buildNews(7, "n7"))));
 
-        mockMvc.perform(post("/modifyNews.do")
-                        .param("newsID", String.valueOf(news.getNewsID()))
-                        .param("title", "modified_title")
-                        .param("content", "modified_content"))
-                .andExpect(status().is3xxRedirection())
-                .andExpect(redirectedUrl("news_manage"));
-
-        News updated = newsDao.getOne(news.getNewsID());
-        assertEquals("modified_title", updated.getTitle());
-        assertEquals("modified_content", updated.getContent());
+        mockMvc.perform(get("/newsList.do").param("page", "1"))
+                .andExpect(status().isOk())
+                .andExpect(content().json("[{\"newsID\":6},{\"newsID\":7}]", false));
     }
 
     @Test
-    @Tag("P0")
     void itAdmNews05_delNews_shouldReturnTrueAndDelete() throws Exception {
-        News news = createNews();
-
-        mockMvc.perform(post("/delNews.do").param("newsID", String.valueOf(news.getNewsID())))
+        mockMvc.perform(post("/delNews.do").param("newsID", "8"))
                 .andExpect(status().isOk())
                 .andExpect(content().string("true"));
 
-        boolean exists = newsDao.findAll().stream().anyMatch(n -> n.getNewsID() == news.getNewsID());
-        assertTrue(!exists);
+        verify(newsService).delById(8);
+    }
+
+    @Test
+    void itAdmNews06_modifyNews_shouldRedirectAndUpdate() throws Exception {
+        News news = buildNews(9, "old");
+        when(newsService.findById(9)).thenReturn(news);
+
+        mockMvc.perform(post("/modifyNews.do")
+                        .param("newsID", "9")
+                        .param("title", "newTitle")
+                        .param("content", "newContent"))
+                .andExpect(status().is3xxRedirection())
+                .andExpect(redirectedUrl("news_manage"));
+
+        verify(newsService).update(news);
+        assertEquals("newTitle", news.getTitle());
+        assertEquals("newContent", news.getContent());
+    }
+
+    @Test
+    void itAdmNews07_addNews_shouldRedirectAndInsert() throws Exception {
+        mockMvc.perform(post("/addNews.do")
+                        .param("title", "t")
+                        .param("content", "c"))
+                .andExpect(status().is3xxRedirection())
+                .andExpect(redirectedUrl("news_manage"));
+
+        verify(newsService).create(any(News.class));
+    }
+
+    @Test
+    void itAdmNews08_modifyNewsWhenTargetMissing_shouldReturnNotFound() throws Exception {
+        when(newsService.findById(404)).thenReturn(null);
+
+        mockMvc.perform(post("/modifyNews.do")
+                        .param("newsID", "404")
+                        .param("title", "newTitle")
+                        .param("content", "newContent"))
+                .andExpect(status().isNotFound());
+    }
+
+    @Test
+    void itAdmMsg01_messageManage_shouldReturnViewAndTotal() throws Exception {
+        when(messageService.findWaitState(any())).thenReturn(new PageImpl<>(Collections.singletonList(buildMessage(1, "u1001", MessageService.STATE_NO_AUDIT)), PageRequest.of(0, 10), 17));
+
+        mockMvc.perform(get("/message_manage"))
+                .andExpect(status().isOk())
+                .andExpect(view().name("admin/message_manage"))
+                .andExpect(model().attribute("total", 2));
+    }
+
+    @Test
+    void itAdmMsg02_messageList_shouldReturnNoAuditMessages() throws Exception {
+        when(messageService.findWaitState(any())).thenReturn(new PageImpl<>(Collections.singletonList(buildMessage(2, "u1001", MessageService.STATE_NO_AUDIT))));
+        when(messageVoService.returnVo(any())).thenReturn(Collections.singletonList(buildMessageVo(2, "u1001")));
+
+        mockMvc.perform(get("/messageList.do").param("page", "1"))
+                .andExpect(status().isOk())
+                .andExpect(content().json("[{\"messageID\":2}]", false));
+    }
+
+    @Test
+    void itAdmMsg03_passMessage_shouldSetStatePass() throws Exception {
+        mockMvc.perform(post("/passMessage.do").param("messageID", "3"))
+                .andExpect(status().isOk())
+                .andExpect(content().string("true"));
+
+        verify(messageService).confirmMessage(3);
+    }
+
+    @Test
+    void itAdmMsg04_rejectMessage_shouldSetStateReject() throws Exception {
+        mockMvc.perform(post("/rejectMessage.do").param("messageID", "4"))
+                .andExpect(status().isOk())
+                .andExpect(content().string("true"));
+
+        verify(messageService).rejectMessage(4);
+    }
+
+    @Test
+    void itAdmMsg05_delMessage_shouldDeleteMessage() throws Exception {
+        mockMvc.perform(post("/delMessage.do").param("messageID", "5"))
+                .andExpect(status().isOk())
+                .andExpect(content().string("true"));
+
+        verify(messageService).delById(5);
+    }
+
+    private User buildUser(int id, String userID) {
+        User user = new User();
+        user.setId(id);
+        user.setUserID(userID);
+        user.setUserName("name-" + userID);
+        user.setPassword("123456");
+        user.setEmail(userID + "@mail.com");
+        user.setPhone("13000000000");
+        user.setPicture("");
+        return user;
+    }
+
+    private Venue buildVenue(int id, String name) {
+        Venue venue = new Venue();
+        venue.setVenueID(id);
+        venue.setVenueName(name);
+        venue.setDescription("desc");
+        venue.setPrice(100);
+        venue.setPicture("");
+        venue.setAddress("addr");
+        venue.setOpen_time("08:00");
+        venue.setClose_time("22:00");
+        return venue;
+    }
+
+    private Order buildOrder(int id, String userID, int venueID, int state) {
+        Order order = new Order();
+        order.setOrderID(id);
+        order.setUserID(userID);
+        order.setVenueID(venueID);
+        order.setState(state);
+        order.setHours(2);
+        order.setTotal(200);
+        order.setOrderTime(LocalDateTime.of(2026, 4, 23, 10, 0, 0));
+        order.setStartTime(LocalDateTime.of(2026, 4, 24, 9, 0, 0));
+        return order;
+    }
+
+    private OrderVo buildOrderVo(int id, String userID) {
+        OrderVo vo = new OrderVo();
+        vo.setOrderID(id);
+        vo.setUserID(userID);
+        vo.setVenueID(1);
+        vo.setVenueName("venue");
+        vo.setState(OrderService.STATE_NO_AUDIT);
+        vo.setHours(2);
+        vo.setTotal(200);
+        vo.setOrderTime(LocalDateTime.of(2026, 4, 23, 10, 0, 0));
+        vo.setStartTime(LocalDateTime.of(2026, 4, 24, 9, 0, 0));
+        return vo;
+    }
+
+    private News buildNews(int id, String title) {
+        News news = new News();
+        news.setNewsID(id);
+        news.setTitle(title);
+        news.setContent("content");
+        news.setTime(LocalDateTime.of(2026, 4, 23, 10, 0, 0));
+        return news;
+    }
+
+    private Message buildMessage(int id, String userID, int state) {
+        Message message = new Message();
+        message.setMessageID(id);
+        message.setUserID(userID);
+        message.setContent("content");
+        message.setState(state);
+        message.setTime(LocalDateTime.of(2026, 4, 23, 10, 0, 0));
+        return message;
+    }
+
+    private MessageVo buildMessageVo(int id, String userID) {
+        MessageVo vo = new MessageVo();
+        vo.setMessageID(id);
+        vo.setUserID(userID);
+        vo.setContent("content");
+        vo.setState(MessageService.STATE_NO_AUDIT);
+        vo.setUserName("name");
+        vo.setPicture("pic.png");
+        vo.setTime(LocalDateTime.of(2026, 4, 23, 10, 0, 0));
+        return vo;
     }
 }

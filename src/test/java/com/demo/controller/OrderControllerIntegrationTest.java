@@ -1,30 +1,34 @@
 package com.demo.controller;
 
-import com.demo.dao.OrderDao;
-import com.demo.dao.UserDao;
-import com.demo.dao.VenueDao;
+import com.demo.controller.user.OrderController;
 import com.demo.entity.Order;
 import com.demo.entity.User;
 import com.demo.entity.Venue;
-import com.demo.exception.LoginException;
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
-import org.junit.jupiter.api.Tag;
+import com.demo.entity.vo.OrderVo;
+import com.demo.service.OrderService;
+import com.demo.service.OrderVoService;
+import com.demo.service.VenueService;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
-import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
-import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.mock.web.MockHttpSession;
+import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.InjectMocks;
+import org.mockito.Mock;
+import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageImpl;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.test.web.servlet.MockMvc;
-import org.springframework.transaction.annotation.Transactional;
+import org.springframework.test.web.servlet.setup.MockMvcBuilders;
+import org.springframework.web.servlet.view.InternalResourceViewResolver;
 
 import java.time.LocalDateTime;
-import java.time.format.DateTimeFormatter;
-import java.util.Iterator;
+import java.util.Arrays;
+import java.util.Collections;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertNotNull;
-import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
@@ -33,160 +37,133 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.view;
 
-@SpringBootTest
-@AutoConfigureMockMvc
-@Transactional
+@ExtendWith(MockitoExtension.class)
 class OrderControllerIntegrationTest {
 
-    @Autowired
+    @Mock
+    private OrderService orderService;
+
+    @Mock
+    private OrderVoService orderVoService;
+
+    @Mock
+    private VenueService venueService;
+
+    @InjectMocks
+    private OrderController orderController;
+
     private MockMvc mockMvc;
 
-    @Autowired
-    private OrderDao orderDao;
-
-    @Autowired
-    private VenueDao venueDao;
-
-    @Autowired
-    private UserDao userDao;
-
-    @Autowired
-    private ObjectMapper objectMapper;
-
-    private MockHttpSession userSession() {
-        MockHttpSession session = new MockHttpSession();
-        User user = userDao.findByUserID("test");
-        session.setAttribute("user", user);
-        return session;
+    @BeforeEach
+    void setUp() {
+        mockMvc = MockMvcBuilders.standaloneSetup(orderController)
+                .setViewResolvers(viewResolver())
+                .build();
     }
 
-    private Order createOrder(String userId, int venueId, int state) {
-        Order order = new Order();
-        order.setUserID(userId);
-        order.setVenueID(venueId);
-        order.setState(state);
-        order.setOrderTime(LocalDateTime.now());
-        order.setStartTime(LocalDateTime.now().plusDays(2));
-        order.setHours(2);
-        order.setTotal(1000);
-        return orderDao.save(order);
+    private InternalResourceViewResolver viewResolver() {
+        InternalResourceViewResolver resolver = new InternalResourceViewResolver();
+        resolver.setPrefix("/templates/");
+        resolver.setSuffix(".html");
+        return resolver;
     }
 
     @Test
-    @Tag("P0")
     void itOrd01_orderManageWithSession_shouldReturnViewAndTotal() throws Exception {
-        mockMvc.perform(get("/order_manage").session(userSession()))
+        Page<Order> page = new PageImpl<>(Collections.singletonList(buildOrder(1, "u1001", 1, OrderService.STATE_NO_AUDIT)), PageRequest.of(0, 5), 12);
+        when(orderService.findUserOrder(eq("u1001"), any())).thenReturn(page);
+
+        mockMvc.perform(get("/order_manage").sessionAttr("user", buildUser("u1001")))
                 .andExpect(status().isOk())
                 .andExpect(view().name("order_manage"))
                 .andExpect(model().attributeExists("total"));
     }
 
     @Test
-    @Tag("P0")
-    void itOrd02_orderManageWithoutSession_shouldThrowLoginException() throws Exception {
+    void itOrd02_orderManageWithoutSession_shouldRedirectToLogin() throws Exception {
         mockMvc.perform(get("/order_manage"))
-                .andExpect(status().is5xxServerError())
-                .andExpect(result -> assertTrue(result.getResolvedException() instanceof LoginException));
+                .andExpect(status().is3xxRedirection())
+                .andExpect(redirectedUrl("/login"));
     }
 
     @Test
-    @Tag("P0")
     void itOrd03_orderPlaceByVenueId_shouldReturnOrderPlaceView() throws Exception {
-        mockMvc.perform(get("/order_place.do").param("venueID", "16"))
+        when(venueService.findByVenueID(3)).thenReturn(buildVenue(3, "venue-3"));
+
+        mockMvc.perform(get("/order_place.do").param("venueID", "3"))
                 .andExpect(status().isOk())
                 .andExpect(view().name("order_place"))
                 .andExpect(model().attributeExists("venue"));
     }
 
     @Test
-    @Tag("P0")
-    void itOrd04_getOrderListWithSession_shouldReturnOrdersOfUser() throws Exception {
-        String json = mockMvc.perform(get("/getOrderList.do")
-                        .param("page", "1")
-                        .session(userSession()))
+    void itOrd04_orderPlaceWithoutVenue_shouldReturnOrderPlaceView() throws Exception {
+        mockMvc.perform(get("/order_place"))
                 .andExpect(status().isOk())
-                .andReturn()
-                .getResponse()
-                .getContentAsString();
-
-        JsonNode array = objectMapper.readTree(json);
-        assertTrue(array.isArray());
-        Iterator<JsonNode> it = array.elements();
-        while (it.hasNext()) {
-            JsonNode node = it.next();
-            assertEquals("test", node.get("userID").asText());
-        }
+                .andExpect(view().name("order_place"));
     }
 
     @Test
-    @Tag("P0")
-    void itOrd05_getOrderListWithoutSession_shouldThrowLoginException() throws Exception {
+    void itOrd05_getOrderListWithSession_shouldReturnOrdersOfUser() throws Exception {
+        Page<Order> page = new PageImpl<>(Collections.singletonList(buildOrder(2, "u1001", 1, OrderService.STATE_WAIT)));
+        when(orderService.findUserOrder(eq("u1001"), any())).thenReturn(page);
+        when(orderVoService.returnVo(any())).thenReturn(Collections.singletonList(buildOrderVo(2, "u1001")));
+
+        mockMvc.perform(get("/getOrderList.do")
+                        .param("page", "1")
+                        .sessionAttr("user", buildUser("u1001")))
+                .andExpect(status().isOk())
+                .andExpect(content().json("[{\"orderID\":2,\"userID\":\"u1001\"}]", false));
+    }
+
+    @Test
+    void itOrd06_getOrderListWithoutSession_shouldRedirectToLogin() throws Exception {
         mockMvc.perform(get("/getOrderList.do").param("page", "1"))
-                .andExpect(status().is5xxServerError())
-                .andExpect(result -> assertTrue(result.getResolvedException() instanceof LoginException));
+                .andExpect(status().is3xxRedirection())
+                .andExpect(redirectedUrl("/login"));
     }
 
     @Test
-    @Tag("P0")
-    void itOrd06_addOrderWithSession_shouldInsertNoAuditOrderAndRedirect() throws Exception {
-        long before = orderDao.count();
-        LocalDateTime expectedStart = LocalDateTime.parse("2026-05-01 10:00:00", DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss"));
-
+    void itOrd07_addOrderWithSession_shouldInsertNoAuditOrderAndRedirect() throws Exception {
         mockMvc.perform(post("/addOrder.do")
-                        .session(userSession())
-                        .param("venueName", "场馆2")
-                        .param("date", "ignored")
-                        .param("startTime", "2026-05-01 10:00")
-                        .param("hours", "2"))
+                        .param("venueName", "gymA")
+                        .param("date", "2026-04-26")
+                        .param("startTime", "09:30:00")
+                        .param("hours", "2")
+                        .sessionAttr("user", buildUser("u1001")))
                 .andExpect(status().is3xxRedirection())
                 .andExpect(redirectedUrl("order_manage"));
 
-        long after = orderDao.count();
-        assertEquals(before + 1, after);
-
-        Venue venue = venueDao.findByVenueName("场馆2");
-        boolean created = orderDao.findAll().stream().anyMatch(order ->
-                "test".equals(order.getUserID())
-                        && order.getVenueID() == venue.getVenueID()
-                        && order.getState() == 1
-                        && expectedStart.equals(order.getStartTime())
-                        && order.getTotal() == 1000);
-        assertTrue(created);
+        verify(orderService).submit("gymA", LocalDateTime.of(2026, 4, 26, 9, 30, 0), 2, "u1001");
     }
 
     @Test
-    @Tag("P0")
-    void itOrd07_addOrderWithoutSession_shouldThrowLoginException() throws Exception {
+    void itOrd08_addOrderWithoutSession_shouldRedirectToLogin() throws Exception {
         mockMvc.perform(post("/addOrder.do")
-                        .param("venueName", "场馆2")
-                        .param("date", "ignored")
-                        .param("startTime", "2026-05-01 10:00")
+                        .param("venueName", "gymA")
+                        .param("date", "2026-04-26")
+                        .param("startTime", "09:30:00")
                         .param("hours", "2"))
-                .andExpect(status().is5xxServerError())
-                .andExpect(result -> assertTrue(result.getResolvedException() instanceof LoginException));
+                .andExpect(status().is3xxRedirection())
+                .andExpect(redirectedUrl("/login"));
     }
 
     @Test
-    @Tag("P0")
-    void itOrd08_finishOrder_shouldUpdateStateToFinish() throws Exception {
-        Order order = createOrder("test", 16, 2);
-
-        mockMvc.perform(post("/finishOrder.do")
-                        .param("orderID", String.valueOf(order.getOrderID())))
+    void itOrd09_finishOrder_shouldUpdateStateToFinish() throws Exception {
+        mockMvc.perform(post("/finishOrder.do").param("orderID", "8"))
                 .andExpect(status().isOk());
 
-        Order updated = orderDao.findByOrderID(order.getOrderID());
-        assertNotNull(updated);
-        assertEquals(3, updated.getState());
+        verify(orderService).finishOrder(8);
     }
 
     @Test
-    @Tag("P1")
-    void itOrd09_modifyOrderPage_shouldReturnOrderEditView() throws Exception {
-        Order order = createOrder("test", 16, 1);
+    void itOrd10_modifyOrderPage_shouldReturnOrderEditView() throws Exception {
+        Order order = buildOrder(9, "u1001", 4, OrderService.STATE_WAIT);
+        Venue venue = buildVenue(4, "venue-4");
+        when(orderService.findById(9)).thenReturn(order);
+        when(venueService.findByVenueID(4)).thenReturn(venue);
 
-        mockMvc.perform(get("/modifyOrder.do")
-                        .param("orderID", String.valueOf(order.getOrderID())))
+        mockMvc.perform(get("/modifyOrder.do").param("orderID", "9"))
                 .andExpect(status().isOk())
                 .andExpect(view().name("order_edit"))
                 .andExpect(model().attributeExists("order"))
@@ -194,69 +171,113 @@ class OrderControllerIntegrationTest {
     }
 
     @Test
-    @Tag("P0")
-    void itOrd10_modifyOrderWithSession_shouldResetToNoAuditAndRedirect() throws Exception {
-        Order order = createOrder("test", 16, 2);
-
+    void itOrd11_modifyOrderWithSession_shouldResetToNoAuditAndRedirect() throws Exception {
         mockMvc.perform(post("/modifyOrder")
-                        .session(userSession())
-                        .param("orderID", String.valueOf(order.getOrderID()))
-                        .param("venueName", "场馆3")
-                        .param("date", "ignored")
-                        .param("startTime", "2026-06-02 09:00")
-                        .param("hours", "4"))
-                .andExpect(status().is3xxRedirection())
-                .andExpect(redirectedUrl("order_manage"));
-
-        Order updated = orderDao.findByOrderID(order.getOrderID());
-        assertNotNull(updated);
-        assertEquals(1, updated.getState());
-        assertEquals(4, updated.getHours());
-        assertEquals(17, updated.getVenueID());
-        assertEquals(1200, updated.getTotal());
-    }
-
-    @Test
-    @Tag("P0")
-    void itOrd11_deleteOrder_shouldReturnTrueAndDeleteRecord() throws Exception {
-        Order order = createOrder("test", 16, 1);
-
-        mockMvc.perform(post("/delOrder.do")
-                        .param("orderID", String.valueOf(order.getOrderID())))
+                        .param("venueName", "gymB")
+                        .param("date", "2026-04-27")
+                        .param("startTime", "10:00:00")
+                        .param("hours", "3")
+                        .param("orderID", "9")
+                        .sessionAttr("user", buildUser("u1001")))
                 .andExpect(status().isOk())
                 .andExpect(content().string("true"));
 
-        assertEquals(null, orderDao.findByOrderID(order.getOrderID()));
+        verify(orderService).updateOrder(9, "gymB", LocalDateTime.of(2026, 4, 27, 10, 0, 0), 3, "u1001");
     }
 
     @Test
-    @Tag("P1")
-    void itOrd12_getVenueOrderByDate_shouldReturnVenueAndOrders() throws Exception {
-        mockMvc.perform(get("/order/getOrderList.do")
-                        .param("venueName", "场馆2")
-                        .param("date", "2020-01-24"))
-                .andExpect(status().isOk())
-                .andExpect(content().contentTypeCompatibleWith("application/json"))
-                .andExpect(result -> {
-                    JsonNode root = objectMapper.readTree(result.getResponse().getContentAsString());
-                    assertNotNull(root.get("venue"));
-                    assertNotNull(root.get("orders"));
-                    assertTrue(root.get("orders").isArray());
-                });
-    }
-
-    @Test
-    @Tag("P2")
-    void itOrd13_modifyOrderWithInvalidTime_shouldReturn5xx() throws Exception {
-        Order order = createOrder("test", 16, 1);
-
+    void itOrd12_modifyOrderWithoutSession_shouldRedirectToLogin() throws Exception {
         mockMvc.perform(post("/modifyOrder")
-                        .session(userSession())
-                        .param("orderID", String.valueOf(order.getOrderID()))
-                        .param("venueName", "场馆2")
-                        .param("date", "ignored")
+                        .param("venueName", "gymB")
+                        .param("date", "2026-04-27")
+                        .param("startTime", "10:00:00")
+                        .param("hours", "3")
+                        .param("orderID", "9"))
+                .andExpect(status().is3xxRedirection())
+                .andExpect(redirectedUrl("/login"));
+    }
+
+    @Test
+    void itOrd13_deleteOrder_shouldReturnTrueAndDeleteRecord() throws Exception {
+        mockMvc.perform(post("/delOrder.do").param("orderID", "11"))
+                .andExpect(status().isOk())
+                .andExpect(content().string("true"));
+
+        verify(orderService).delOrder(11);
+    }
+
+    @Test
+    void itOrd14_getVenueOrderByDate_shouldReturnVenueAndOrders() throws Exception {
+        Venue venue = buildVenue(6, "venue-6");
+        when(venueService.findByVenueName("venue-6")).thenReturn(venue);
+        when(orderService.findDateOrder(eq(6), any(), any())).thenReturn(Arrays.asList(
+                buildOrder(31, "u1001", 6, OrderService.STATE_WAIT),
+                buildOrder(32, "u1002", 6, OrderService.STATE_NO_AUDIT)
+        ));
+
+        mockMvc.perform(get("/order/getOrderList.do")
+                        .param("venueName", "venue-6")
+                        .param("date", "2026-04-28"))
+                .andExpect(status().isOk())
+                .andExpect(content().json("{\"venue\":{\"venueID\":6},\"orders\":[{\"orderID\":31},{\"orderID\":32}]}", false));
+    }
+
+    @Test
+    void itOrd15_modifyOrderWithInvalidTime_shouldReturnBadRequest() throws Exception {
+        mockMvc.perform(post("/modifyOrder")
+                        .param("venueName", "gymB")
+                        .param("date", "2026-04-27")
                         .param("startTime", "bad")
-                        .param("hours", "2"))
-                .andExpect(status().is5xxServerError());
+                        .param("hours", "3")
+                        .param("orderID", "9")
+                        .sessionAttr("user", buildUser("u1001")))
+                .andExpect(status().isBadRequest());
+    }
+
+    private User buildUser(String userID) {
+        User user = new User();
+        user.setUserID(userID);
+        user.setUserName("name");
+        return user;
+    }
+
+    private Venue buildVenue(int id, String name) {
+        Venue venue = new Venue();
+        venue.setVenueID(id);
+        venue.setVenueName(name);
+        venue.setPrice(100);
+        venue.setAddress("addr");
+        venue.setDescription("desc");
+        venue.setPicture("");
+        venue.setOpen_time("08:00");
+        venue.setClose_time("22:00");
+        return venue;
+    }
+
+    private Order buildOrder(int id, String userID, int venueID, int state) {
+        Order order = new Order();
+        order.setOrderID(id);
+        order.setUserID(userID);
+        order.setVenueID(venueID);
+        order.setState(state);
+        order.setHours(2);
+        order.setTotal(200);
+        order.setOrderTime(LocalDateTime.of(2026, 4, 23, 10, 0, 0));
+        order.setStartTime(LocalDateTime.of(2026, 4, 24, 9, 0, 0));
+        return order;
+    }
+
+    private OrderVo buildOrderVo(int orderID, String userID) {
+        OrderVo vo = new OrderVo();
+        vo.setOrderID(orderID);
+        vo.setUserID(userID);
+        vo.setVenueID(1);
+        vo.setVenueName("venue");
+        vo.setState(OrderService.STATE_WAIT);
+        vo.setHours(2);
+        vo.setTotal(200);
+        vo.setOrderTime(LocalDateTime.of(2026, 4, 23, 10, 0, 0));
+        vo.setStartTime(LocalDateTime.of(2026, 4, 24, 9, 0, 0));
+        return vo;
     }
 }

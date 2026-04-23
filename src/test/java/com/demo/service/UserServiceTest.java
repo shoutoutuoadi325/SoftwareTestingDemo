@@ -3,7 +3,6 @@ package com.demo.service;
 import com.demo.dao.UserDao;
 import com.demo.entity.User;
 import com.demo.service.impl.UserServiceImpl;
-import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
@@ -15,10 +14,11 @@ import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 
 import java.util.Arrays;
+import java.util.Collections;
+import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
-import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -32,90 +32,87 @@ class UserServiceTest {
     private UserServiceImpl userService;
 
     @Test
-    @Tag("P0")
     void utUs01_findByUserID_shouldReturnUser() {
-        User user = new User(1, "test", "test", "test", "", "", 0, "");
-        when(userDao.findByUserID("test")).thenReturn(user);
+        User user = buildUser(1, "u1001", "alice", 0);
+        when(userDao.findByUserID("u1001")).thenReturn(user);
 
-        User result = userService.findByUserID("test");
+        User result = userService.findByUserID("u1001");
 
-        assertSame(user, result);
+        assertEquals("u1001", result.getUserID());
+        verify(userDao).findByUserID("u1001");
     }
 
     @Test
-    @Tag("P1")
     void utUs02_findByUserID_notExists_shouldReturnNull() {
-        when(userDao.findByUserID("not_exists")).thenReturn(null);
+        when(userDao.findByUserID("missing")).thenReturn(null);
 
-        User result = userService.findByUserID("not_exists");
+        User result = userService.findByUserID("missing");
 
         assertNull(result);
+        verify(userDao).findByUserID("missing");
     }
 
     @Test
-    @Tag("P0")
     void utUs03_findById_shouldReturnUser() {
-        User user = new User(1, "test", "test", "test", "", "", 0, "");
-        when(userDao.findById(1)).thenReturn(user);
+        User user = buildUser(2, "u2001", "bob", 0);
+        when(userDao.findById(2)).thenReturn(user);
 
-        User result = userService.findById(1);
+        User result = userService.findById(2);
 
-        assertSame(user, result);
+        assertEquals("u2001", result.getUserID());
+        verify(userDao).findById(2);
     }
 
     @Test
-    @Tag("P0")
     void utUs04_findByUserIDPageable_shouldReturnOnlyNormalUsers() {
         Pageable pageable = PageRequest.of(0, 10);
-        Page<User> page = new PageImpl<>(Arrays.asList(
-                new User(1, "u1", "u1", "p", "", "", 0, ""),
-                new User(2, "u2", "u2", "p", "", "", 0, "")
-        ));
+        Page<User> page = new PageImpl<>(Collections.singletonList(buildUser(1, "u1001", "alice", 0)));
         when(userDao.findAllByIsadmin(0, pageable)).thenReturn(page);
 
         Page<User> result = userService.findByUserID(pageable);
 
-        assertEquals(2, result.getContent().size());
-        result.getContent().forEach(user -> assertEquals(0, user.getIsadmin()));
+        assertEquals(1, result.getTotalElements());
+        assertEquals(0, result.getContent().get(0).getIsadmin());
+        verify(userDao).findAllByIsadmin(0, pageable);
     }
 
     @Test
-    @Tag("P0")
     void utUs05_checkLogin_success_shouldReturnUser() {
-        User user = new User(1, "test", "test", "test", "", "", 0, "");
-        when(userDao.findByUserIDAndPassword("test", "test")).thenReturn(user);
+        User user = buildUser(1, "u1001", "alice", 0);
+        when(userDao.findByUserIDAndPassword("u1001", "123456")).thenReturn(user);
 
-        User result = userService.checkLogin("test", "test");
+        User result = userService.checkLogin("u1001", "123456");
 
-        assertSame(user, result);
+        assertEquals("alice", result.getUserName());
+        verify(userDao).findByUserIDAndPassword("u1001", "123456");
     }
 
     @Test
-    @Tag("P0")
     void utUs06_checkLogin_fail_shouldReturnNull() {
-        when(userDao.findByUserIDAndPassword("test", "wrong")).thenReturn(null);
+        when(userDao.findByUserIDAndPassword("u1001", "bad")).thenReturn(null);
 
-        User result = userService.checkLogin("test", "wrong");
+        User result = userService.checkLogin("u1001", "bad");
 
         assertNull(result);
+        verify(userDao).findByUserIDAndPassword("u1001", "bad");
     }
 
     @Test
-    @Tag("P0")
     void utUs07_create_shouldReturnTotalCountAfterSave() {
-        User toCreate = new User();
-        when(userDao.findAll()).thenReturn(Arrays.asList(new User(), new User(), new User()));
+        User user = buildUser(0, "u3001", "newUser", 0);
+        List<User> allUsers = Arrays.asList(buildUser(1, "u1", "n1", 0), buildUser(2, "u2", "n2", 0), user);
+        when(userDao.findAll()).thenReturn(allUsers);
 
-        int result = userService.create(toCreate);
+        int total = userService.create(user);
 
-        verify(userDao).save(toCreate);
-        assertEquals(3, result);
+        assertEquals(3, total);
+        verify(userDao).save(user);
+        verify(userDao).findAll();
     }
 
     @Test
-    @Tag("P0")
     void utUs08_updateUser_shouldSaveEntity() {
-        User user = new User(1, "test", "newName", "p", "a@b.com", "123", 0, "");
+        User user = buildUser(1, "u1001", "alice_new", 0);
 
         userService.updateUser(user);
 
@@ -123,23 +120,32 @@ class UserServiceTest {
     }
 
     @Test
-    @Tag("P0")
     void utUs09_delByID_shouldDeleteById() {
-        userService.delByID(10);
+        userService.delByID(9);
 
-        verify(userDao).deleteById(10);
+        verify(userDao).deleteById(9);
     }
 
     @Test
-    @Tag("P1")
     void utUs10_countUserID_shouldReturnCount() {
-        when(userDao.countByUserID("test")).thenReturn(1);
-        when(userDao.countByUserID("ut_new")).thenReturn(0);
+        when(userDao.countByUserID("u1001")).thenReturn(2);
 
-        int existing = userService.countUserID("test");
-        int notExisting = userService.countUserID("ut_new");
+        int count = userService.countUserID("u1001");
 
-        assertEquals(1, existing);
-        assertEquals(0, notExisting);
+        assertEquals(2, count);
+        verify(userDao).countByUserID("u1001");
+    }
+
+    private User buildUser(int id, String userID, String userName, int isAdmin) {
+        User user = new User();
+        user.setId(id);
+        user.setUserID(userID);
+        user.setUserName(userName);
+        user.setPassword("123456");
+        user.setEmail(userID + "@mail.com");
+        user.setPhone("13000000000");
+        user.setIsadmin(isAdmin);
+        user.setPicture("");
+        return user;
     }
 }

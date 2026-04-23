@@ -6,7 +6,6 @@ import com.demo.entity.Message;
 import com.demo.entity.User;
 import com.demo.entity.vo.MessageVo;
 import com.demo.service.impl.MessageVoServiceImpl;
-import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
@@ -18,6 +17,7 @@ import java.util.Arrays;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
@@ -33,35 +33,59 @@ class MessageVoServiceTest {
     private MessageVoServiceImpl messageVoService;
 
     @Test
-    @Tag("P1")
     void utMvs01_returnMessageVoByMessageID_shouldMapUserInfo() {
-        Message message = new Message(2, "test", "hello", LocalDateTime.now(), 2);
-        User user = new User(1, "test", "测试用户", "p", "", "", 0, "pic.png");
-        when(messageDao.findByMessageID(2)).thenReturn(message);
-        when(userDao.findByUserID("test")).thenReturn(user);
+        Message message = buildMessage(1, "u1001", MessageService.STATE_PASS);
+        User user = buildUser("u1001", "alice");
+        when(messageDao.findByMessageID(1)).thenReturn(message);
+        when(userDao.findByUserID("u1001")).thenReturn(user);
 
-        MessageVo result = messageVoService.returnMessageVoByMessageID(2);
+        MessageVo result = messageVoService.returnMessageVoByMessageID(1);
 
-        assertEquals(2, result.getMessageID());
-        assertEquals("test", result.getUserID());
-        assertEquals("测试用户", result.getUserName());
-        assertEquals("pic.png", result.getPicture());
+        assertEquals(1, result.getMessageID());
+        assertEquals("u1001", result.getUserID());
+        assertEquals("alice", result.getUserName());
+        assertEquals("avatar.png", result.getPicture());
     }
 
     @Test
-    @Tag("P1")
     void utMvs02_returnVo_shouldReturnMappedListWithSameSize() {
-        Message m1 = new Message(1, "u1", "c1", LocalDateTime.now(), 2);
-        Message m2 = new Message(2, "u2", "c2", LocalDateTime.now(), 1);
-        when(messageDao.findByMessageID(1)).thenReturn(m1);
-        when(messageDao.findByMessageID(2)).thenReturn(m2);
-        when(userDao.findByUserID("u1")).thenReturn(new User(1, "u1", "n1", "p", "", "", 0, "a.png"));
-        when(userDao.findByUserID("u2")).thenReturn(new User(2, "u2", "n2", "p", "", "", 0, "b.png"));
+        Message message1 = buildMessage(1, "u1001", MessageService.STATE_PASS);
+        Message message2 = buildMessage(2, "u1002", MessageService.STATE_NO_AUDIT);
 
-        List<MessageVo> result = messageVoService.returnVo(Arrays.asList(m1, m2));
+        when(messageDao.findByMessageID(1)).thenReturn(message1);
+        when(messageDao.findByMessageID(2)).thenReturn(message2);
+        when(userDao.findByUserID("u1001")).thenReturn(buildUser("u1001", "alice"));
+        when(userDao.findByUserID("u1002")).thenReturn(buildUser("u1002", "bob"));
+
+        List<MessageVo> result = messageVoService.returnVo(Arrays.asList(message1, message2));
 
         assertEquals(2, result.size());
-        assertEquals(1, result.get(0).getMessageID());
-        assertEquals(2, result.get(1).getMessageID());
+        assertEquals("alice", result.get(0).getUserName());
+        assertEquals("bob", result.get(1).getUserName());
+    }
+
+    @Test
+    void utMvs03_returnMessageVoByMessageID_whenMessageMissing_shouldThrowIllegalArgumentException() {
+        when(messageDao.findByMessageID(404)).thenReturn(null);
+
+        assertThrows(IllegalArgumentException.class, () -> messageVoService.returnMessageVoByMessageID(404));
+    }
+
+    private Message buildMessage(int id, String userID, int state) {
+        Message message = new Message();
+        message.setMessageID(id);
+        message.setUserID(userID);
+        message.setContent("content-" + id);
+        message.setState(state);
+        message.setTime(LocalDateTime.of(2026, 4, 23, 10, 0, 0));
+        return message;
+    }
+
+    private User buildUser(String userID, String userName) {
+        User user = new User();
+        user.setUserID(userID);
+        user.setUserName(userName);
+        user.setPicture("avatar.png");
+        return user;
     }
 }
